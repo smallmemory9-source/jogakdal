@@ -6,7 +6,6 @@ import base64
 from datetime import datetime
 from streamlit_calendar import calendar
 from streamlit_option_menu import option_menu
-# [쿠키 매니저]
 try:
     from streamlit_cookies_manager import CookieManager
 except ImportError:
@@ -18,7 +17,7 @@ st.set_page_config(
     page_title="조각달과자점", 
     page_icon="🥐", 
     layout="wide", 
-    initial_sidebar_state="expanded" # PC에서도 항상 열림
+    initial_sidebar_state="expanded" 
 )
 
 # --- [1. 디자인 & CSS 설정] ---
@@ -36,14 +35,12 @@ st.markdown("""
         background-color: #FFF3E0;
     }
 
-    /* 상단 헤더 스타일 */
+    /* 상단 헤더 투명처리 및 햄버거 버튼 숨김 */
     header {
-        visibility: visible !important;
         background-color: transparent !important;
     }
-    /* 햄버거 버튼 숨기기 (사이드바가 항상 떠있으므로 불필요) */
     [data-testid="stHeader"] {
-        display: none !important;
+        display: none !important; /* 사이드바 고정이므로 햄버거 버튼 불필요 */
     }
 
     /* 불필요한 요소 숨기기 */
@@ -53,33 +50,42 @@ st.markdown("""
     [data-testid="stDecoration"] {display:none;} 
     [data-testid="stStatusWidget"] {visibility: hidden;} 
 
-    /* [★핵심 수정] 모바일 사이드바 강력 고정 */
+    /* [★핵심 수정] 모바일 화면 구조 재배치 (겹침 방지) */
     @media (max-width: 768px) {
-        /* 1. 사이드바 강제 표시 및 고정 */
+        /* 1. 사이드바 강제 고정 및 너비 설정 */
         section[data-testid="stSidebar"] {
             display: block !important;
-            width: 180px !important; /* 메뉴 너비 고정 (화면 너무 가리지 않게 조절) */
-            min-width: 180px !important;
-            transform: translateX(0) !important; /* 숨김 애니메이션 무력화 */
+            width: 170px !important; /* 메뉴 너비 */
+            min-width: 170px !important;
+            transform: none !important; /* 애니메이션 제거 */
             visibility: visible !important;
-            z-index: 1000 !important; /* 맨 위로 올림 */
+            z-index: 100 !important;
         }
         
-        /* 2. 닫기 버튼(X, >>) 아예 숨김 */
+        /* 닫기 버튼 숨김 */
         [data-testid="stSidebarCollapseButton"] {
             display: none !important;
         }
 
-        /* 3. 본문 내용이 사이드바에 가려지지 않게 오른쪽으로 밀기 */
-        .main .block-container {
-            margin-left: 180px !important; /* 사이드바 너비만큼 밀기 */
-            width: calc(100% - 180px) !important; /* 남은 공간만 쓰기 */
+        /* 2. 메인 본문 영역을 사이드바만큼 오른쪽으로 밀기 (겹침 해결) */
+        section[data-testid="stMain"] {
+            margin-left: 170px !important; /* 사이드바 너비만큼 여백 줌 */
+            width: calc(100% - 170px) !important; /* 남은 공간만 사용 */
+        }
+
+        /* 3. 본문 내부 패딩 및 하단 여백(키보드 대응) */
+        .block-container {
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
             padding-top: 1rem !important;
+            padding-bottom: 400px !important; /* 키보드 올라올 때 공간 확보 */
             max-width: none !important;
-            padding-bottom: 100px !important;
         }
+        
+        /* 모바일 폰트 크기 미세 조정 */
+        h1 { font-size: 1.5rem !important; }
+        h2 { font-size: 1.2rem !important; }
+        p, div { font-size: 0.9rem !important; }
     }
 
     /* 버튼 디자인 */
@@ -242,7 +248,6 @@ def login_page():
         unsafe_allow_html=True
     )
 
-    # 로그인 폼 중앙 배치
     lc1, lc2, lc3 = st.columns([1, 8, 1]) 
     with lc2:
         tab1, tab2 = st.tabs(["로그인", "회원가입"])
@@ -360,8 +365,6 @@ def page_board(category_name, emoji):
                     st.rerun()
     else:
         st.info("등록된 글이 없습니다.")
-
-# [레시피 메뉴 함수 삭제됨]
 
 def page_checklist():
     st.header("✅ 체크리스트")
@@ -662,12 +665,13 @@ def page_admin():
 # --- [6. 메인 앱 실행] ---
 def main_app():
     with st.sidebar:
+        # 로고 표시
         if os.path.exists("logo.png"):
             st.image("logo.png", width=100)
         st.write(f"안녕하세요, **{st.session_state['name']}**님!")
         st.caption(f"직책: {st.session_state['role']}")
         
-        # [수정됨] '레시피' 삭제 완료
+        # [수정됨] 레시피 메뉴 삭제
         menu = option_menu(
             menu_title=None,
             options=["공지사항", "스케줄", "예약 현황", "체크리스트", "매뉴얼", "관리자"],
