@@ -11,75 +11,94 @@ st.set_page_config(
     page_title="조각달과자점", 
     page_icon="🥐", 
     layout="wide", 
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed" # 모바일 친화적: 시작할 때 사이드바 숨김
 )
 
-# --- [1. 디자인: 따뜻한 베이커리 테마 CSS] ---
+# --- [1. 디자인: 모바일 최적화 & 따뜻한 테마 CSS] ---
 st.markdown("""
     <style>
     /* 폰트 설정 (Noto Sans KR) */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
     html, body, [class*="css"]  {
         font-family: 'Noto Sans KR', sans-serif;
-        color: #4E342E; /* 다크 초콜릿 텍스트 */
+        color: #4E342E;
     }
 
-    /* 전체 배경색 (설정 파일 외 강제 적용) */
+    /* 전체 배경색 */
     .stApp {
-        background-color: #FFF3E0; /* 연한 크림색 */
+        background-color: #FFF3E0;
     }
 
-    /* 버튼 디자인 (동글동글한 브라운 버튼) */
+    /* [모바일 최적화 핵심] 화면이 좁을 때 여백을 줄여서 넓게 쓰기 */
+    @media (max-width: 768px) {
+        .main .block-container {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            padding-top: 1rem !important;
+            max-width: 100% !important;
+        }
+        /* 모바일에서 폰트 크기 조절 */
+        h1 { font-size: 1.8rem !important; }
+        h2 { font-size: 1.5rem !important; }
+        h3 { font-size: 1.2rem !important; }
+        
+        /* 모바일에서 탭 글씨 작게 */
+        .stTabs [data-baseweb="tab"] {
+            padding: 5px 10px !important;
+            font-size: 0.9rem !important;
+        }
+    }
+
+    /* 버튼 디자인 (모바일 터치하기 좋게) */
     .stButton>button {
         background-color: #8D6E63;
         color: white;
         border-radius: 15px;
         border: none;
-        padding: 0.5rem 1rem;
+        padding: 0.6rem 1rem; /* 터치 영역 확보 */
         font-weight: bold;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         transition: all 0.3s;
+        width: 100%; /* 버튼을 항상 가로로 꽉 차게 */
     }
     .stButton>button:hover {
         background-color: #6D4C41;
         color: #FFF8E1;
-        transform: translateY(-2px);
-    }
-    /* 폼 내부 버튼 꽉 차게 */
-    [data-testid="stForm"] .stButton>button {
-        width: 100%;
+        transform: translateY(-1px);
     }
 
-    /* 입력창 스타일 (부드러운 테두리) */
+    /* 입력창 스타일 */
     .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input, .stDateInput>div>div>input, .stTimeInput>div>div>input {
         border-radius: 10px;
         border: 1px solid #BCAAA4;
         background-color: #FFFFFF;
+        height: 45px; /* 터치하기 좋게 높이 키움 */
     }
 
     /* 컨테이너 (카드) 스타일 */
     [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
         background-color: #FFFFFF;
-        padding: 20px;
+        padding: 15px; /* 모바일 고려 패딩 축소 */
         border-radius: 15px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         border: 1px solid #EFEBE9;
+        margin-bottom: 10px;
     }
 
-    /* 상단 헤더 숨기기 */
-    header[data-testid="stHeader"] {background: transparent;}
+    /* 상단 헤더 숨기기 (앱처럼 보이게) */
+    header[data-testid="stHeader"] {display: none;}
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     
     /* 탭 디자인 */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
+        gap: 5px;
     }
     .stTabs [data-baseweb="tab"] {
         background-color: #F5E6D3;
         border-radius: 10px 10px 0 0;
-        padding: 10px 20px;
         color: #5D4037;
+        flex: 1; /* 탭이 화면 너비를 꽉 채우도록 */
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
         background-color: #FFFFFF;
@@ -106,7 +125,6 @@ def is_admin():
     return st.session_state.get("role") in ["Manager", "관리자"]
 
 def init_db():
-    # 사용자 정보
     if not os.path.exists(FILES["users"]):
         df = pd.DataFrame({
             "username": ["admin", "staff1"],
@@ -116,11 +134,9 @@ def init_db():
         })
         df.to_csv(FILES["users"], index=False)
 
-    # 게시글 (공지/매뉴얼/레시피)
     if not os.path.exists(FILES["posts"]):
         pd.DataFrame(columns=["id", "category", "sub_category", "title", "content", "author", "date"]).to_csv(FILES["posts"], index=False)
 
-    # 체크리스트 정의
     if not os.path.exists(FILES["checklist_def"]):
         df = pd.DataFrame({
             "type": ["오픈", "오픈", "마감", "마감"],
@@ -128,24 +144,19 @@ def init_db():
         })
         df.to_csv(FILES["checklist_def"], index=False)
 
-    # 체크리스트 로그
     if not os.path.exists(FILES["checklist_log"]):
         pd.DataFrame(columns=["date", "type", "item", "user", "time"]).to_csv(FILES["checklist_log"], index=False)
         
-    # 스케줄
     if not os.path.exists(FILES["schedule"]):
         pd.DataFrame(columns=["id", "date", "user", "start_time", "end_time", "role"]).to_csv(FILES["schedule"], index=False)
 
-    # 예약 메뉴
     if not os.path.exists(FILES["reservation_menu"]):
         df = pd.DataFrame({"item_name": ["홀케이크", "소금빵 세트", "단체 주문"]})
         df.to_csv(FILES["reservation_menu"], index=False)
 
-    # 예약 내역
     if not os.path.exists(FILES["reservations"]):
         pd.DataFrame(columns=["id", "date", "time", "item", "count", "customer_name", "customer_phone", "created_by", "created_at"]).to_csv(FILES["reservations"], index=False)
     
-    # 예약 로그
     if not os.path.exists(FILES["reservation_logs"]):
         pd.DataFrame(columns=["res_id", "modifier", "modified_at", "details"]).to_csv(FILES["reservation_logs"], index=False)
 
@@ -158,7 +169,6 @@ def load(key):
 
 def save(key, df): df.to_csv(FILES[key], index=False)
 
-# --- [4. 초기화 실행] ---
 init_db()
 
 # --- [5. 페이지별 기능 함수] ---
@@ -194,7 +204,7 @@ def login_page():
                         st.session_state.update({"logged_in": True, "username": user_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
                         st.rerun()
                     else:
-                        st.error("아이디 또는 비밀번호를 확인해주세요.")
+                        st.error("정보를 확인해주세요.")
         with tab2:
             with st.form("signup_form"):
                 new_id = st.text_input("희망 아이디")
@@ -208,14 +218,14 @@ def login_page():
                     else:
                         new_row = pd.DataFrame([{"username": new_id, "password": new_pw, "name": new_name, "role": "Staff"}])
                         save("users", pd.concat([users, new_row], ignore_index=True))
-                        st.success("가입되었습니다! 로그인 탭에서 로그인해주세요.")
+                        st.success("가입되었습니다! 로그인해주세요.")
 
 def page_board(category_name, emoji):
     st.header(f"{emoji} {category_name}")
     if "edit_post_id" not in st.session_state: st.session_state.edit_post_id = None
     
     if is_admin():
-        with st.expander("➕ 새 글 작성하기"):
+        with st.expander("➕ 새 글 작성"):
             with st.form(f"write_{category_name}"):
                 title = st.text_input("제목")
                 content = st.text_area("내용")
@@ -236,11 +246,9 @@ def page_board(category_name, emoji):
     ITEMS_PER_PAGE = 10
     total_items = len(df)
     total_pages = math.ceil(total_items / ITEMS_PER_PAGE) if total_items > 0 else 1
-    
     page_key = f"page_{category_name}"
     if page_key not in st.session_state: st.session_state[page_key] = 1
     current_page = st.session_state[page_key]
-    
     start_idx = (current_page - 1) * ITEMS_PER_PAGE
     end_idx = start_idx + ITEMS_PER_PAGE
     page_df = df.iloc[start_idx:end_idx]
@@ -277,7 +285,6 @@ def page_board(category_name, emoji):
                             df_all = df_all[df_all["id"] != row['id']]
                             save("posts", df_all)
                             st.rerun()
-        
         if total_pages > 1:
             st.divider()
             cols = st.columns(total_pages + 2)
@@ -289,12 +296,12 @@ def page_board(category_name, emoji):
         st.info("등록된 글이 없습니다.")
 
 def page_recipe():
-    st.header("🥐 레시피 관리")
-    RECIPE_CATS = ["빵 (Bread)", "케이크 (Cake)", "구움과자 (Baked)", "음료 (Beverage)", "기타"]
+    st.header("🥐 레시피")
+    RECIPE_CATS = ["빵", "케이크", "구움과자", "음료", "기타"]
     if "edit_post_id" not in st.session_state: st.session_state.edit_post_id = None
     
     if is_admin():
-        with st.expander("➕ 새 레시피 등록"):
+        with st.expander("➕ 레시피 등록"):
             with st.form("write_recipe"):
                 r_cat = st.selectbox("종류", RECIPE_CATS)
                 r_title = st.text_input("제품명")
@@ -355,7 +362,7 @@ def page_recipe():
                 st.caption("등록된 레시피가 없습니다.")
 
 def page_checklist():
-    st.header("✅ 업무 체크리스트")
+    st.header("✅ 체크리스트")
     today = datetime.now().strftime("%Y-%m-%d")
     items_df = load("checklist_def")
     log_df = load("checklist_log")
@@ -388,7 +395,7 @@ def page_checklist():
     with tab2: render_check("마감")
 
 def page_schedule():
-    st.header("📅 월간 근무표")
+    st.header("📅 근무표")
     if "selected_date" not in st.session_state: st.session_state.selected_date = datetime.now().strftime("%Y-%m-%d")
     if "edit_sch_id" not in st.session_state: st.session_state.edit_sch_id = None
 
@@ -417,10 +424,10 @@ def page_schedule():
 
     st.divider()
     sel_date = st.session_state.selected_date
-    st.subheader(f"📌 {sel_date} 근무 관리")
+    st.subheader(f"📌 {sel_date} 근무")
 
     if is_admin():
-        with st.expander(f"➕ {sel_date} 근무자 추가", expanded=True):
+        with st.expander(f"➕ {sel_date} 근무 추가", expanded=True):
             with st.form("add_sch"):
                 users = load("users")
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"sch_dt_{sel_date}")
@@ -473,7 +480,7 @@ def page_schedule():
                     c1, c2, c3 = st.columns([0.5, 4, 2])
                     color = row['role'] if str(row['role']).startswith("#") else "#8D6E63"
                     c1.markdown(f"<div style='width:20px;height:20px;background-color:{color};border-radius:50%;margin-top:10px;'></div>", unsafe_allow_html=True)
-                    c2.markdown(f"**{row['user']}** ({row['start_time']} ~ {row['end_time']})")
+                    c2.markdown(f"**{row['user']}** ({row['start_time']}~{row['end_time']})")
                     if is_admin():
                         with c3:
                             b1, b2 = st.columns(2)
@@ -520,7 +527,7 @@ def page_reservation():
 
     st.divider()
     sel_date = st.session_state.res_selected_date
-    st.subheader(f"🍰 {sel_date} 예약 리스트")
+    st.subheader(f"🍰 {sel_date} 예약")
 
     with st.expander(f"➕ {sel_date} 예약 등록", expanded=True):
         with st.form("add_res"):
@@ -608,31 +615,25 @@ def page_reservation():
     else:
         st.info("예약 내역이 없습니다.")
 
-# --- [기능 5] 관리자 페이지 (비밀번호 보호 적용) ---
 def page_admin():
     st.header("⚙️ 관리자 설정")
     
-    # 세션 상태 초기화
     if "admin_unlocked" not in st.session_state:
         st.session_state.admin_unlocked = False
 
-    # 잠금 상태일 때: 비밀번호 입력창 표시
     if not st.session_state.admin_unlocked:
-        st.warning("🔒 관리자 메뉴는 보안을 위해 비밀번호가 필요합니다.")
-        with st.form("admin_password_form"):
-            password = st.text_input("비밀번호를 입력하세요", type="password")
-            submit = st.form_submit_button("확인")
-            
-            if submit:
-                if password == "army1214":  # 하드코딩된 비밀번호
+        st.warning("🔒 관리자 메뉴는 비밀번호가 필요합니다.")
+        with st.form("admin_pw"):
+            pw = st.text_input("비밀번호", type="password")
+            if st.form_submit_button("확인"):
+                if pw == "army1214":
                     st.session_state.admin_unlocked = True
                     st.rerun()
                 else:
-                    st.error("비밀번호가 틀렸습니다.")
-        return  # 비밀번호가 틀리거나 입력 전이면 아래 내용 보여주지 않음
+                    st.error("비밀번호 불일치")
+        return
 
-    # 잠금 해제 상태일 때: 관리자 기능 표시
-    if st.button("🔒 관리자 모드 잠그기"):
+    if st.button("🔒 잠그기"):
         st.session_state.admin_unlocked = False
         st.rerun()
 
@@ -659,8 +660,7 @@ def page_admin():
 # --- [6. 메인 앱 실행] ---
 def main_app():
     with st.sidebar:
-        if os.path.exists("logo.png"):
-            st.image("logo.png", width=100)
+        # 로고 삭제 요청 반영 (이미지 코드 제거)
         st.write(f"안녕하세요, **{st.session_state['name']}**님!")
         st.caption(f"직책: {st.session_state['role']}")
         
@@ -680,7 +680,7 @@ def main_app():
         
         if st.button("로그아웃", use_container_width=True):
             st.session_state["logged_in"] = False
-            st.session_state["admin_unlocked"] = False # 로그아웃 시 관리자 잠금도 초기화
+            st.session_state["admin_unlocked"] = False 
             st.rerun()
 
     if menu == "공지사항": page_board("공지사항", "📢")
