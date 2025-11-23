@@ -79,16 +79,18 @@ st.markdown("""
         margin-bottom: 10px;
     }
     
-    /* 로고 이미지 강제 중앙 정렬을 위한 클래스 */
+    /* 로고 이미지 강제 중앙 정렬 및 크기 고정 (글씨 잘림 방지) */
     .centered-logo {
         display: flex;
         justify-content: center;
         align-items: center;
         margin-bottom: 10px;
+        width: 100%; /* 컨테이너 너비 꽉 채움 */
     }
     .centered-logo img {
-        width: 120px; /* 로고 크기 고정 */
-        border-radius: 50%; /* 원형 이미지를 원하면 추가 */
+        width: 150px; /* 로고 크기 고정 (조절 가능) */
+        height: auto; /* 비율 유지 */
+        object-fit: contain; /* 이미지가 잘리지 않게 영역 안에 맞춤 */
     }
     </style>
     """, unsafe_allow_html=True)
@@ -170,7 +172,7 @@ def login_page():
     
     st.write("")
     
-    # [★수정됨] 로고 중앙 정렬 (HTML/CSS 강제 적용)
+    # [★수정됨] 로고 중앙 정렬 & 글씨 잘림 방지 (HTML/CSS)
     if os.path.exists("logo.png"):
         img_b64 = get_img_as_base64("logo.png")
         st.markdown(
@@ -184,7 +186,8 @@ def login_page():
     else:
         st.markdown("<h1 style='text-align: center;'>🥐</h1>", unsafe_allow_html=True)
         
-    st.markdown("<h2 style='text-align: center; color: #4E342E; margin-top: 0px;'>조각달과자점</h2>", unsafe_allow_html=True)
+    # [★삭제됨] 중복된 '조각달과자점' 텍스트 삭제
+    # st.markdown("<h2 style='text-align: center; color: #4E342E; margin-top: 0px;'>조각달과자점</h2>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #8D6E63;'>따뜻한 마음을 굽는 업무 공간</p>", unsafe_allow_html=True)
     st.write("")
 
