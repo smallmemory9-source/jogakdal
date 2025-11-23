@@ -5,6 +5,62 @@ import math
 from datetime import datetime
 from streamlit_calendar import calendar
 
+# --- [0. 디자인 설정] 앱 이름 및 스타일 (반드시 맨 위에 있어야 함) ---
+st.set_page_config(
+    page_title="조각달과자점", 
+    page_icon="🥐", 
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
+
+# 커스텀 CSS 적용 (예쁜 디자인)
+st.markdown("""
+    <style>
+    /* 전체 폰트 적용 */
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
+    html, body, [class*="css"]  {
+        font-family: 'Noto Sans KR', sans-serif;
+    }
+    
+    /* 버튼 디자인 (동글동글하고 색상 변경) */
+    .stButton>button {
+        border-radius: 20px;
+        border: 1px solid #E0E0E0;
+        background-color: #FFFFFF;
+        color: #333333;
+        font-weight: bold;
+    }
+    .stButton>button:hover {
+        background-color: #FFF3E0; /* 마우스 올리면 연한 오렌지색 */
+        border-color: #FFB74D;
+        color: #E65100;
+    }
+
+    /* 상단 헤더 색상 줄이기 (심플하게) */
+    header[data-testid="stHeader"] {
+        background-color: rgba(255, 255, 255, 0.5);
+    }
+
+    /* 불필요한 Streamlit 메뉴 숨기기 (전문 앱처럼) */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stDeployButton {display:none;}
+    
+    /* 탭 디자인 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 10px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        border-radius: 4px 4px 0px 0px;
+        gap: 1px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
 # --- [1. 설정] 데이터 파일 정의 ---
 FILES = {
     "users": "users.csv",
@@ -19,7 +75,7 @@ FILES = {
 
 # --- [2. 유틸리티] 관리자 여부 확인 ---
 def is_admin():
-    return st.session_state["role"] in ["Manager", "관리자"]
+    return st.session_state.get("role") in ["Manager", "관리자"]
 
 # --- [3. 초기화] 데이터 파일 생성 ---
 def init_db():
@@ -72,34 +128,40 @@ def save(key, df): df.to_csv(FILES[key], index=False)
 
 # --- [5. 로그인 화면] ---
 def login_page():
-    st.title("🥐 조각달과자점 그룹웨어")
-    tab1, tab2 = st.tabs(["🔑 로그인", "📝 회원가입"])
-    with tab1:
-        with st.form("login_form"):
-            user_id = st.text_input("아이디")
-            user_pw = st.text_input("비밀번호", type="password")
-            if st.form_submit_button("로그인"):
-                users = load("users")
-                user = users[(users["username"] == user_id) & (users["password"] == user_pw)]
-                if not user.empty:
-                    st.session_state.update({"logged_in": True, "username": user_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
-                    st.rerun()
-                else:
-                    st.error("정보가 일치하지 않습니다.")
-    with tab2:
-        st.subheader("신규 직원 가입")
-        with st.form("signup_form"):
-            new_id = st.text_input("희망 아이디")
-            new_pw = st.text_input("희망 비밀번호", type="password")
-            new_name = st.text_input("이름 (실명)")
-            if st.form_submit_button("가입 신청"):
-                users = load("users")
-                if new_id in users["username"].values:
-                    st.warning("이미 존재하는 아이디입니다.")
-                else:
-                    new_row = pd.DataFrame([{"username": new_id, "password": new_pw, "name": new_name, "role": "Staff"}])
-                    save("users", pd.concat([users, new_row], ignore_index=True))
-                    st.success("가입되었습니다! 로그인해주세요.")
+    c1, c2, c3 = st.columns([1,2,1])
+    with c2:
+        st.title("🥐 조각달과자점")
+        st.caption("업무 통합 관리 시스템")
+        
+        tab1, tab2 = st.tabs(["🔑 로그인", "📝 회원가입"])
+        with tab1:
+            with st.form("login_form"):
+                user_id = st.text_input("아이디")
+                user_pw = st.text_input("비밀번호", type="password")
+                submit = st.form_submit_button("로그인", use_container_width=True)
+                if submit:
+                    users = load("users")
+                    user = users[(users["username"] == user_id) & (users["password"] == user_pw)]
+                    if not user.empty:
+                        st.session_state.update({"logged_in": True, "username": user_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
+                        st.rerun()
+                    else:
+                        st.error("아이디 또는 비밀번호를 확인해주세요.")
+        with tab2:
+            st.subheader("신규 직원 가입")
+            with st.form("signup_form"):
+                new_id = st.text_input("희망 아이디")
+                new_pw = st.text_input("희망 비밀번호", type="password")
+                new_name = st.text_input("이름 (실명)")
+                submit = st.form_submit_button("가입 신청", use_container_width=True)
+                if submit:
+                    users = load("users")
+                    if new_id in users["username"].values:
+                        st.warning("이미 존재하는 아이디입니다.")
+                    else:
+                        new_row = pd.DataFrame([{"username": new_id, "password": new_pw, "name": new_name, "role": "Staff"}])
+                        save("users", pd.concat([users, new_row], ignore_index=True))
+                        st.success("가입되었습니다! 로그인해주세요.")
 
 # --- [기능 1] 게시판 (공지/매뉴얼) ---
 def page_board(category_name, emoji):
@@ -113,7 +175,7 @@ def page_board(category_name, emoji):
             with st.form(f"write_{category_name}"):
                 title = st.text_input("제목")
                 content = st.text_area("내용")
-                if st.form_submit_button("등록"):
+                if st.form_submit_button("등록", use_container_width=True):
                     df = load("posts")
                     new_id = 1 if df.empty else df["id"].max() + 1
                     new_row = pd.DataFrame([{
@@ -190,7 +252,7 @@ def page_recipe():
                 r_cat = st.selectbox("종류 선택", RECIPE_CATS)
                 r_title = st.text_input("레시피 명 (제품명)")
                 r_content = st.text_area("레시피 내용")
-                if st.form_submit_button("레시피 저장"):
+                if st.form_submit_button("레시피 저장", use_container_width=True):
                     df = load("posts")
                     new_id = 1 if df.empty else df["id"].max() + 1
                     new_row = pd.DataFrame([{
@@ -281,7 +343,7 @@ def page_checklist():
     with tab1: render_check("오픈")
     with tab2: render_check("마감")
 
-# --- [기능 3] 스케줄 (날짜 연동 문제 해결) ---
+# --- [기능 3] 스케줄 ---
 def page_schedule():
     st.header("📅 월간 근무표")
     if "selected_date" not in st.session_state: st.session_state.selected_date = datetime.now().strftime("%Y-%m-%d")
@@ -302,13 +364,10 @@ def page_schedule():
                 "backgroundColor": color, "borderColor": color, "allDay": True
             })
 
-    # 달력 그리기
     cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": True, "dateClick": True}, callbacks=['dateClick'], key="sch_calendar")
     
-    # [★수정] 날짜 클릭 시 강제 업데이트 로직
     if cal_output.get("dateClick"):
         clicked_date = cal_output["dateClick"]["date"]
-        # 기존 날짜와 다를 경우에만 업데이트 후 새로고침 (무한루프 방지)
         if st.session_state.selected_date != clicked_date:
             st.session_state.selected_date = clicked_date
             st.rerun()
@@ -321,10 +380,7 @@ def page_schedule():
         with st.expander(f"➕ {sel_date} 근무자 추가", expanded=True):
             with st.form("add_sch_form"):
                 users = load("users")
-                
-                # [★수정] 날짜 입력창에 key를 부여하여 강제로 새 날짜 반영
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"sch_date_input_{sel_date}")
-                
                 s_user = st.selectbox("직원", users["name"].unique())
                 times = [f"{h:02d}:00" for h in range(6, 24)]
                 c1, c2 = st.columns(2)
@@ -332,12 +388,10 @@ def page_schedule():
                 s_end = c2.selectbox("퇴근", times, index=12)
                 s_color = st.color_picker("색상", "#3788d8")
                 
-                if st.form_submit_button("추가"):
+                if st.form_submit_button("추가", use_container_width=True):
                     new_id = 1 if sched_df.empty else sched_df["id"].max() + 1
                     new_row = pd.DataFrame([{
-                        "id": new_id, 
-                        "date": str(c_date), 
-                        "user": s_user, 
+                        "id": new_id, "date": str(c_date), "user": s_user, 
                         "start_time": s_start, "end_time": s_end, "role": s_color
                     }])
                     save("schedule", pd.concat([sched_df, new_row], ignore_index=True))
@@ -391,7 +445,7 @@ def page_schedule():
     else:
         st.info("이 날짜에는 등록된 근무가 없습니다.")
 
-# --- [기능 4] 예약 현황 (날짜 연동 문제 해결) ---
+# --- [기능 4] 예약 현황 ---
 def page_reservation():
     st.header("📅 예약 현황")
     if "res_selected_date" not in st.session_state: st.session_state.res_selected_date = datetime.now().strftime("%Y-%m-%d")
@@ -417,7 +471,6 @@ def page_reservation():
 
     cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": True, "dateClick": True}, callbacks=['dateClick'], key="res_calendar")
     
-    # [★수정] 날짜 클릭 시 강제 업데이트
     if cal_output.get("dateClick"):
         clicked_date = cal_output["dateClick"]["date"]
         if st.session_state.res_selected_date != clicked_date:
@@ -434,7 +487,6 @@ def page_reservation():
                 st.error("등록된 메뉴가 없습니다. 관리자에게 메뉴 등록을 요청하세요.")
                 submit = st.form_submit_button("등록 불가")
             else:
-                # [★수정] key 부여로 날짜 강제 동기화
                 c_date = st.date_input("예약 날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"res_date_input_{sel_date}")
 
                 c1, c2 = st.columns(2)
@@ -446,14 +498,12 @@ def page_reservation():
                 r_name = c4.text_input("고객 이름")
                 r_phone = st.text_input("전화번호")
 
-                if st.form_submit_button("예약 등록"):
+                if st.form_submit_button("예약 등록", use_container_width=True):
                     new_id = 1 if res_df.empty else res_df["id"].max() + 1
                     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
                     
                     new_row = pd.DataFrame([{
-                        "id": new_id, 
-                        "date": str(c_date), 
-                        "time": str(r_time)[:5], 
+                        "id": new_id, "date": str(c_date), "time": str(r_time)[:5], 
                         "item": r_item, "count": r_count, 
                         "customer_name": r_name, "customer_phone": r_phone,
                         "created_by": st.session_state["name"], "created_at": now_str
@@ -498,7 +548,6 @@ def page_reservation():
                                 "modified_at": now_str, "details": log_msg
                             }])
                             save("reservation_logs", pd.concat([res_logs, new_log], ignore_index=True))
-                            
                             st.session_state.edit_res_id = None
                             st.rerun()
                         if b2.form_submit_button("취소"):
@@ -535,34 +584,41 @@ def page_admin():
     with tab1:
         users = load("users")
         edited_users = st.data_editor(users, column_config={"role": st.column_config.SelectboxColumn("권한", options=["Staff", "Manager"], required=True)}, hide_index=True, use_container_width=True)
-        if st.button("직원 권한 저장"):
+        if st.button("직원 권한 저장", use_container_width=True):
             save("users", edited_users)
             st.success("저장 완료")
     with tab2:
         checklist_def = load("checklist_def")
         edited_list = st.data_editor(checklist_def, num_rows="dynamic", use_container_width=True)
-        if st.button("체크리스트 저장"):
+        if st.button("체크리스트 저장", use_container_width=True):
             save("checklist_def", edited_list)
             st.success("저장 완료")
     with tab3:
         st.caption("예약 현황에서 선택할 수 있는 메뉴 리스트를 관리합니다.")
         res_menu = load("reservation_menu")
         edited_menu = st.data_editor(res_menu, num_rows="dynamic", use_container_width=True, column_config={"item_name": "메뉴 이름"})
-        if st.button("예약 메뉴 저장"):
+        if st.button("예약 메뉴 저장", use_container_width=True):
             save("reservation_menu", edited_menu)
             st.success("메뉴 목록이 업데이트되었습니다.")
 
 # --- 메인 앱 ---
 def main_app():
-    st.sidebar.title(f"{st.session_state['name']}님")
-    st.sidebar.caption(f"직책: {st.session_state['role']}")
-    
-    menu_options = ["📢 공지사항", "📅 스케줄", "📅 예약 현황", "✅ 체크리스트", "🥐 레시피", "📘 회사 매뉴얼"]
-    if is_admin(): 
-        menu_options.append("⚙️ 관리자 설정")
+    with st.sidebar:
+        st.header(f"🥐 {st.session_state['name']}님")
+        st.caption(f"직책: {st.session_state['role']}")
+        st.divider()
         
-    menu = st.sidebar.radio("메뉴", menu_options)
-    
+        menu_options = ["📢 공지사항", "📅 스케줄", "📅 예약 현황", "✅ 체크리스트", "🥐 레시피", "📘 회사 매뉴얼"]
+        if is_admin(): 
+            menu_options.append("⚙️ 관리자 설정")
+            
+        menu = st.radio("메뉴 이동", menu_options)
+        
+        st.divider()
+        if st.button("로그아웃", use_container_width=True):
+            st.session_state["logged_in"] = False
+            st.rerun()
+
     if menu == "📢 공지사항": page_board("공지사항", "📢")
     elif menu == "📅 스케줄": page_schedule()
     elif menu == "📅 예약 현황": page_reservation()
@@ -570,11 +626,6 @@ def main_app():
     elif menu == "🥐 레시피": page_recipe()
     elif menu == "📘 회사 매뉴얼": page_board("회사 매뉴얼", "📘")
     elif menu == "⚙️ 관리자 설정": page_admin()
-    
-    st.sidebar.divider()
-    if st.sidebar.button("로그아웃"):
-        st.session_state["logged_in"] = False
-        st.rerun()
 
 if "logged_in" not in st.session_state: st.session_state["logged_in"] = False
 if not st.session_state["logged_in"]: login_page()
