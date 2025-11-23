@@ -5,59 +5,105 @@ import math
 from datetime import datetime
 from streamlit_calendar import calendar
 
-# --- [0. 디자인 설정] 앱 이름 및 스타일 (반드시 맨 위에 있어야 함) ---
+# --- [0. 디자인 설정] 앱 이름 및 아이콘 설정 ---
+# page_icon을 "logo.png"로 설정하여 인터넷 탭에 로고가 뜨게 함
 st.set_page_config(
     page_title="조각달과자점", 
-    page_icon="🥐", 
+    page_icon="logo.png", 
     layout="wide", 
     initial_sidebar_state="expanded"
 )
 
-# 커스텀 CSS 적용 (예쁜 디자인)
+# 🎨 전문 디자이너의 커스텀 CSS 적용 (브라운 베이커리 테마)
 st.markdown("""
     <style>
-    /* 전체 폰트 적용 */
+    /* 폰트 적용 */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
     html, body, [class*="css"]  {
         font-family: 'Noto Sans KR', sans-serif;
+        color: #4E342E;
     }
-    
-    /* 버튼 디자인 (동글동글하고 색상 변경) */
+
+    /* --- 전체 배경 --- */
+    .stApp {
+        background-color: #FFFBE6;
+    }
+
+    /* --- 사이드바 --- */
+    [data-testid="stSidebar"] {
+        background-color: #F5E6D3;
+        border-right: 1px solid #D7CCC8;
+    }
+    [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+        color: #3E2723 !important;
+    }
+
+    /* --- 버튼 디자인 --- */
     .stButton>button {
-        border-radius: 20px;
-        border: 1px solid #E0E0E0;
-        background-color: #FFFFFF;
-        color: #333333;
+        background: linear-gradient(135deg, #8D6E63 0%, #6D4C41 100%);
+        color: white !important;
+        border: none;
+        border-radius: 12px;
+        padding: 0.5rem 1rem;
         font-weight: bold;
+        box-shadow: 0 2px 5px rgba(62, 39, 35, 0.2);
+        transition: all 0.3s ease;
     }
     .stButton>button:hover {
-        background-color: #FFF3E0; /* 마우스 올리면 연한 오렌지색 */
-        border-color: #FFB74D;
-        color: #E65100;
+        background: linear-gradient(135deg, #A1887F 0%, #8D6E63 100%);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(62, 39, 35, 0.3);
+    }
+    [data-testid="stForm"] .stButton>button {
+        width: 100%;
     }
 
-    /* 상단 헤더 색상 줄이기 (심플하게) */
-    header[data-testid="stHeader"] {
-        background-color: rgba(255, 255, 255, 0.5);
+    /* --- 입력창 디자인 --- */
+    .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input, .stTimeInput>div>div>input, .stDateInput>div>div>input {
+        border: 2px solid #BCAAA4;
+        border-radius: 8px;
+        background-color: #FFFFFF;
+        color: #4E342E;
     }
-
-    /* 불필요한 Streamlit 메뉴 숨기기 (전문 앱처럼) */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    .stDeployButton {display:none;}
+    .stTextInput>div>div>input:focus, .stSelectbox>div>div>div[data-baseweb="select"]:focus-within {
+        border-color: #8D6E63;
+        box-shadow: 0 0 0 3px rgba(141, 110, 99, 0.2);
+    }
     
-    /* 탭 디자인 */
+    /* --- 탭 디자인 --- */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
+        border-bottom-color: #BCAAA4;
+        gap: 8px;
     }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
-        white-space: pre-wrap;
-        border-radius: 4px 4px 0px 0px;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
+        border-radius: 8px 8px 0px 0px;
+        background-color: #EFEBE9;
+        color: #6D4C41;
+        border: 1px solid transparent;
     }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        background-color: #FFFBE6;
+        color: #3E2723;
+        border-color: #BCAAA4;
+        border-bottom-color: #FFFBE6;
+        font-weight: bold;
+    }
+
+    /* --- 컨테이너 디자인 --- */
+    [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
+        background-color: #FFFFFF;
+        padding: 15px;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        border: 1px solid #EFEBE9;
+    }
+
+    /* 상단 헤더 숨기기 */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stDeployButton {display:none;}
+    header[data-testid="stHeader"] {background: transparent;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -128,11 +174,19 @@ def save(key, df): df.to_csv(FILES[key], index=False)
 
 # --- [5. 로그인 화면] ---
 def login_page():
+    # 화면을 3분할해서 가운데 정렬
     c1, c2, c3 = st.columns([1,2,1])
     with c2:
-        st.title("🥐 조각달과자점")
-        st.caption("업무 통합 관리 시스템")
+        # [로고 이미지 표시]
+        if os.path.exists("logo.png"):
+            st.image("logo.png", use_container_width=True)
+        else:
+            # 로고 파일이 없을 경우 텍스트로 대체
+            st.title("🥐 조각달과자점")
+            
+        st.markdown("<h5 style='text-align: center; color: #6D4C41;'>따뜻한 하루를 시작하는 업무 공간</h5>", unsafe_allow_html=True)
         
+        st.write("") 
         tab1, tab2 = st.tabs(["🔑 로그인", "📝 회원가입"])
         with tab1:
             with st.form("login_form"):
@@ -603,8 +657,13 @@ def page_admin():
 
 # --- 메인 앱 ---
 def main_app():
+    # 사이드바 디자인 적용
     with st.sidebar:
-        st.header(f"🥐 {st.session_state['name']}님")
+        # 사이드바에 로고 작게 표시
+        if os.path.exists("logo.png"):
+            st.image("logo.png", width=100)
+            
+        st.header(f"{st.session_state['name']}님")
         st.caption(f"직책: {st.session_state['role']}")
         st.divider()
         
@@ -615,7 +674,7 @@ def main_app():
         menu = st.radio("메뉴 이동", menu_options)
         
         st.divider()
-        if st.button("로그아웃", use_container_width=True):
+        if st.button("로그아웃"):
             st.session_state["logged_in"] = False
             st.rerun()
 
