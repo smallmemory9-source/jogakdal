@@ -34,19 +34,13 @@ st.markdown("""
         .main .block-container {
             padding-left: 1rem !important;
             padding-right: 1rem !important;
-            padding-top: 1rem !important;
+            padding-top: 2rem !important; /* 상단 버튼 가리지 않게 여백 확보 */
             max-width: 100% !important;
         }
         /* 모바일에서 폰트 크기 조절 */
         h1 { font-size: 1.8rem !important; }
         h2 { font-size: 1.5rem !important; }
         h3 { font-size: 1.2rem !important; }
-        
-        /* 모바일에서 탭 글씨 작게 */
-        .stTabs [data-baseweb="tab"] {
-            padding: 5px 10px !important;
-            font-size: 0.9rem !important;
-        }
     }
 
     /* 버튼 디자인 (모바일 터치하기 좋게) */
@@ -85,10 +79,19 @@ st.markdown("""
         margin-bottom: 10px;
     }
 
-    /* 상단 헤더 숨기기 (앱처럼 보이게) */
-    header[data-testid="stHeader"] {display: none;}
+    /* 상단 헤더 스타일 (메뉴 버튼 보이게 수정됨) */
+    header[data-testid="stHeader"] {
+        background-color: transparent;
+    }
+    /* 햄버거 메뉴 버튼 색상 조정 (배경과 어울리게) */
+    .css-14xtw13 {
+        color: #4E342E;
+    }
+    
+    /* 불필요한 Streamlit 요소 숨기기 */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
+    .stDeployButton {display:none;}
     
     /* 탭 디자인 */
     .stTabs [data-baseweb="tab-list"] {
@@ -174,51 +177,68 @@ init_db()
 # --- [5. 페이지별 기능 함수] ---
 
 def login_page():
-    st.markdown("<style>.stApp {background-color: #FFFFFF;}</style>", unsafe_allow_html=True)
+    # 배경을 흰색으로 설정하고, 이미지를 강제로 중앙 정렬하는 CSS 추가
+    st.markdown("""
+        <style>
+        .stApp {background-color: #FFFFFF;}
+        /* 이미지(로고) 중앙 정렬을 위한 CSS */
+        div[data-testid="stImage"] {
+            display: block;
+            margin-left: auto;
+            margin-right: auto;
+            text-align: center;
+        }
+        div[data-testid="stImage"] > img {
+            margin: 0 auto;
+        }
+        </style>
+        """, unsafe_allow_html=True)
     
-    c1, c2, c3 = st.columns([1, 2, 1])
-    with c2:
-        st.write("")
-        st.write("")
+    # 모바일에서 가운데 정렬을 확실하게 하기 위해 컬럼 대신 컨테이너 사용
+    with st.container():
+        st.write("") # 상단 여백
+        
+        # [로고 이미지] - CSS로 자동 중앙 정렬됨
         if os.path.exists("logo.png"):
-            l1, l2, l3 = st.columns([1, 1, 1])
-            with l2:
-                st.image("logo.png", width=120)
+            st.image("logo.png", width=120)
         else:
-            st.title("🥐")
+            st.markdown("<h1 style='text-align: center;'>🥐</h1>", unsafe_allow_html=True)
             
-        st.markdown("<h2 style='text-align: center; color: #4E342E;'>조각달과자점</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: #4E342E; margin-top: 10px;'>조각달과자점</h2>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: #8D6E63;'>따뜻한 마음을 굽는 업무 공간</p>", unsafe_allow_html=True)
         st.write("")
 
-        tab1, tab2 = st.tabs(["로그인", "회원가입"])
-        with tab1:
-            with st.form("login_form"):
-                user_id = st.text_input("아이디")
-                user_pw = st.text_input("비밀번호", type="password")
-                submit = st.form_submit_button("입장하기")
-                if submit:
-                    users = load("users")
-                    user = users[(users["username"] == user_id) & (users["password"] == user_pw)]
-                    if not user.empty:
-                        st.session_state.update({"logged_in": True, "username": user_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
-                        st.rerun()
-                    else:
-                        st.error("정보를 확인해주세요.")
-        with tab2:
-            with st.form("signup_form"):
-                new_id = st.text_input("희망 아이디")
-                new_pw = st.text_input("희망 비밀번호", type="password")
-                new_name = st.text_input("이름 (실명)")
-                submit = st.form_submit_button("가입 신청")
-                if submit:
-                    users = load("users")
-                    if new_id in users["username"].values:
-                        st.warning("이미 존재하는 아이디입니다.")
-                    else:
-                        new_row = pd.DataFrame([{"username": new_id, "password": new_pw, "name": new_name, "role": "Staff"}])
-                        save("users", pd.concat([users, new_row], ignore_index=True))
-                        st.success("가입되었습니다! 로그인해주세요.")
+        # 로그인 폼도 중앙에 좁게 배치하기 위해 컬럼 사용
+        lc1, lc2, lc3 = st.columns([1, 8, 1]) # 모바일에서는 꽉 차게, PC에서는 적당하게
+        with lc2:
+            tab1, tab2 = st.tabs(["로그인", "회원가입"])
+            with tab1:
+                with st.form("login_form"):
+                    user_id = st.text_input("아이디")
+                    user_pw = st.text_input("비밀번호", type="password")
+                    submit = st.form_submit_button("입장하기")
+                    if submit:
+                        users = load("users")
+                        user = users[(users["username"] == user_id) & (users["password"] == user_pw)]
+                        if not user.empty:
+                            st.session_state.update({"logged_in": True, "username": user_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
+                            st.rerun()
+                        else:
+                            st.error("정보를 확인해주세요.")
+            with tab2:
+                with st.form("signup_form"):
+                    new_id = st.text_input("희망 아이디")
+                    new_pw = st.text_input("희망 비밀번호", type="password")
+                    new_name = st.text_input("이름 (실명)")
+                    submit = st.form_submit_button("가입 신청")
+                    if submit:
+                        users = load("users")
+                        if new_id in users["username"].values:
+                            st.warning("이미 존재하는 아이디입니다.")
+                        else:
+                            new_row = pd.DataFrame([{"username": new_id, "password": new_pw, "name": new_name, "role": "Staff"}])
+                            save("users", pd.concat([users, new_row], ignore_index=True))
+                            st.success("가입되었습니다! 로그인해주세요.")
 
 def page_board(category_name, emoji):
     st.header(f"{emoji} {category_name}")
@@ -660,7 +680,7 @@ def page_admin():
 # --- [6. 메인 앱 실행] ---
 def main_app():
     with st.sidebar:
-        # 로고 삭제 요청 반영 (이미지 코드 제거)
+        # 로고 이미지 삭제 요청 반영
         st.write(f"안녕하세요, **{st.session_state['name']}**님!")
         st.caption(f"직책: {st.session_state['role']}")
         
