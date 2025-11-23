@@ -164,16 +164,13 @@ init_db()
 # --- [5. 페이지별 기능 함수] ---
 
 def login_page():
-    # 배경을 흰색으로 (로그인 화면만 깔끔하게)
     st.markdown("<style>.stApp {background-color: #FFFFFF;}</style>", unsafe_allow_html=True)
     
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
         st.write("")
         st.write("")
-        # 로고 이미지 (1/6 크기로 조정)
         if os.path.exists("logo.png"):
-            # 화면 중앙 정렬을 위한 컬럼 분할
             l1, l2, l3 = st.columns([1, 1, 1])
             with l2:
                 st.image("logo.png", width=120)
@@ -236,7 +233,6 @@ def page_board(category_name, emoji):
     df = load("posts")
     df = df[df["category"] == category_name].sort_values(by="id", ascending=False)
     
-    # 페이징 처리
     ITEMS_PER_PAGE = 10
     total_items = len(df)
     total_pages = math.ceil(total_items / ITEMS_PER_PAGE) if total_items > 0 else 1
@@ -282,7 +278,6 @@ def page_board(category_name, emoji):
                             save("posts", df_all)
                             st.rerun()
         
-        # 페이지네이션 버튼
         if total_pages > 1:
             st.divider()
             cols = st.columns(total_pages + 2)
@@ -613,8 +608,34 @@ def page_reservation():
     else:
         st.info("예약 내역이 없습니다.")
 
+# --- [기능 5] 관리자 페이지 (비밀번호 보호 적용) ---
 def page_admin():
     st.header("⚙️ 관리자 설정")
+    
+    # 세션 상태 초기화
+    if "admin_unlocked" not in st.session_state:
+        st.session_state.admin_unlocked = False
+
+    # 잠금 상태일 때: 비밀번호 입력창 표시
+    if not st.session_state.admin_unlocked:
+        st.warning("🔒 관리자 메뉴는 보안을 위해 비밀번호가 필요합니다.")
+        with st.form("admin_password_form"):
+            password = st.text_input("비밀번호를 입력하세요", type="password")
+            submit = st.form_submit_button("확인")
+            
+            if submit:
+                if password == "army1214":  # 하드코딩된 비밀번호
+                    st.session_state.admin_unlocked = True
+                    st.rerun()
+                else:
+                    st.error("비밀번호가 틀렸습니다.")
+        return  # 비밀번호가 틀리거나 입력 전이면 아래 내용 보여주지 않음
+
+    # 잠금 해제 상태일 때: 관리자 기능 표시
+    if st.button("🔒 관리자 모드 잠그기"):
+        st.session_state.admin_unlocked = False
+        st.rerun()
+
     tab1, tab2, tab3 = st.tabs(["직원 권한", "체크리스트", "예약 메뉴"])
     with tab1:
         users = load("users")
@@ -643,7 +664,6 @@ def main_app():
         st.write(f"안녕하세요, **{st.session_state['name']}**님!")
         st.caption(f"직책: {st.session_state['role']}")
         
-        # 네비게이션 메뉴 (option_menu 사용)
         menu = option_menu(
             menu_title=None,
             options=["공지사항", "스케줄", "예약 현황", "체크리스트", "레시피", "매뉴얼", "관리자"],
@@ -660,6 +680,7 @@ def main_app():
         
         if st.button("로그아웃", use_container_width=True):
             st.session_state["logged_in"] = False
+            st.session_state["admin_unlocked"] = False # 로그아웃 시 관리자 잠금도 초기화
             st.rerun()
 
     if menu == "공지사항": page_board("공지사항", "📢")
