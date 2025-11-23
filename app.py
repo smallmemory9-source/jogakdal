@@ -3,16 +3,24 @@ import pandas as pd
 import os
 import math
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
 from streamlit_calendar import calendar
 from streamlit_option_menu import option_menu
+# [추가됨] 쿠키 매니저 (자동 로그인을 위해 필요)
+# pip install streamlit-cookies-manager 로 설치 필요
+# 설치가 안 되어 있다면 try-except로 에러 방지
+try:
+    from streamlit_cookies_manager import CookieManager
+except ImportError:
+    st.error("자동 로그인을 위해 'streamlit-cookies-manager' 라이브러리가 필요합니다.")
+    st.stop()
 
 # --- [0. 기본 설정] ---
 st.set_page_config(
     page_title="조각달과자점", 
     page_icon="🥐", 
     layout="wide", 
-    initial_sidebar_state="collapsed" 
+    initial_sidebar_state="expanded" # [요청사항] 사이드바 항상 펼침 (PC/태블릿)
 )
 
 # --- [1. 디자인 & CSS 설정] ---
@@ -30,7 +38,7 @@ st.markdown("""
         background-color: #FFF3E0;
     }
 
-    /* 상단 헤더 및 메뉴 버튼 복구 */
+    /* 상단 헤더 스타일 */
     header {
         visibility: visible !important;
         background-color: transparent !important;
@@ -46,16 +54,14 @@ st.markdown("""
     [data-testid="stDecoration"] {display:none;} 
     [data-testid="stStatusWidget"] {visibility: hidden;} 
 
-    /* [★핵심 수정] 모바일 키보드 대응 */
-    /* 화면 폭이 좁을 때(모바일) 하단에 넉넉한 여백 추가 */
+    /* 모바일 키보드 대응 (하단 여백) */
     @media (max-width: 768px) {
         .main .block-container {
-            padding-left: 1rem !important;
-            padding-right: 1rem !important;
-            padding-top: 2rem !important;
-            /* 키보드가 올라와도 스크롤할 수 있게 하단에 400px 여유 공간 확보 */
             padding-bottom: 400px !important; 
-            max-width: 100% !important;
+        }
+        /* 모바일에서 사이드바 너비 최적화 */
+        [data-testid="stSidebar"] {
+            width: 250px !important;
         }
     }
 
@@ -180,12 +186,29 @@ def save(key, df): df.to_csv(FILES[key], index=False)
 
 init_db()
 
+# [★추가됨] 쿠키 매니저 초기화 (자동 로그인용)
+cookies = CookieManager()
+if not cookies.ready():
+    st.stop()
+
 # --- [5. 페이지별 기능 함수] ---
 
 def login_page():
     st.markdown("<style>.stApp {background-color: #FFFFFF;}</style>", unsafe_allow_html=True)
     st.write("")
     
+    # [★추가됨] 자동 로그인 체크
+    if cookies.get("auto_login") == "true":
+        saved_id = cookies.get("saved_id")
+        saved_pw = cookies.get("saved_pw")
+        
+        if saved_id and saved_pw:
+            users = load("users")
+            user = users[(users["username"] == saved_id) & (users["password"] == saved_pw)]
+            if not user.empty:
+                st.session_state.update({"logged_in": True, "username": saved_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
+                st.rerun()
+
     logo_html = ""
     if os.path.exists("logo.png"):
         img_b64 = get_img_as_base64("logo.png")
@@ -211,12 +234,30 @@ def login_page():
             with st.form("login_form"):
                 user_id = st.text_input("아이디")
                 user_pw = st.text_input("비밀번호", type="password")
+                
+                # [★추가됨] 자동 로그인 체크박스
+                auto_login = st.checkbox("자동 로그인 (다음부터 바로 입장)")
+                
                 submit = st.form_submit_button("입장하기")
+                
                 if submit:
                     users = load("users")
                     user = users[(users["username"] == user_id) & (users["password"] == user_pw)]
                     if not user.empty:
                         st.session_state.update({"logged_in": True, "username": user_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
+                        
+                        # [★추가됨] 쿠키 저장 로직
+                        if auto_login:
+                            cookies["auto_login"] = "true"
+                            cookies["saved_id"] = user_id
+                            cookies["saved_pw"] = user_pw # 실제 서비스에선 암호화 필요
+                            cookies.save()
+                        else:
+                            # 체크 해제 시 쿠키 삭제
+                            if cookies.get("auto_login"):
+                                cookies["auto_login"] = "false"
+                                cookies.save()
+                                
                         st.rerun()
                     else:
                         st.error("정보를 확인해주세요.")
@@ -696,6 +737,10 @@ def main_app():
         if st.button("로그아웃", use_container_width=True):
             st.session_state["logged_in"] = False
             st.session_state["admin_unlocked"] = False 
+            # [★추가] 로그아웃 시 쿠키 삭제
+            if cookies.get("auto_login"):
+                cookies["auto_login"] = "false"
+                cookies.save()
             st.rerun()
 
     if menu == "공지사항": page_board("공지사항", "📢")
