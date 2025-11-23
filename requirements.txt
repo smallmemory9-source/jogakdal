@@ -2,3 +2,4 @@ streamlit
 pandas
 streamlit-calendar
 streamlit-option-menu
+streamlit-cookies-manager
