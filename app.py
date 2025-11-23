@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import math
-import base64 # 로고 이미지 처리를 위한 라이브러리 추가
+import base64
 from datetime import datetime
 from streamlit_calendar import calendar
 from streamlit_option_menu import option_menu
@@ -12,7 +12,7 @@ st.set_page_config(
     page_title="조각달과자점", 
     page_icon="🥐", 
     layout="wide", 
-    initial_sidebar_state="collapsed" # 모바일에서는 처음에 메뉴 닫힘
+    initial_sidebar_state="collapsed" 
 )
 
 # --- [1. 디자인 & CSS 설정] ---
@@ -30,18 +30,34 @@ st.markdown("""
         background-color: #FFF3E0;
     }
 
-    /* [수정됨] 상단 헤더 다시 표시 (메뉴 버튼 살리기 위함) */
+    /* 상단 헤더 및 메뉴 버튼 복구 */
     header {
         visibility: visible !important;
         background-color: transparent !important;
     }
+    [data-testid="stHeader"] button {
+        color: #4E342E !important; 
+    }
 
-    /* [요청사항] 거슬리는 요소들만 콕 집어서 숨기기 */
-    #MainMenu {visibility: hidden;} /* 우측 상단 점3개 메뉴 숨김 */
-    .stDeployButton {display:none;} /* Deploy 버튼 숨김 */
-    footer {visibility: hidden;} /* 하단 Footer 숨김 */
-    [data-testid="stDecoration"] {display:none;} /* 상단 무지개 장식 줄 숨김 */
-    [data-testid="stStatusWidget"] {visibility: hidden;} /* 우측 하단 상태 표시 숨김 */
+    /* 불필요한 요소 숨기기 */
+    #MainMenu {visibility: hidden;}
+    .stDeployButton {display:none;} 
+    footer {visibility: hidden;} 
+    [data-testid="stDecoration"] {display:none;} 
+    [data-testid="stStatusWidget"] {visibility: hidden;} 
+
+    /* [★핵심 수정] 모바일 키보드 대응 */
+    /* 화면 폭이 좁을 때(모바일) 하단에 넉넉한 여백 추가 */
+    @media (max-width: 768px) {
+        .main .block-container {
+            padding-left: 1rem !important;
+            padding-right: 1rem !important;
+            padding-top: 2rem !important;
+            /* 키보드가 올라와도 스크롤할 수 있게 하단에 400px 여유 공간 확보 */
+            padding-bottom: 400px !important; 
+            max-width: 100% !important;
+        }
+    }
 
     /* 버튼 디자인 */
     .stButton>button {
@@ -79,18 +95,19 @@ st.markdown("""
         margin-bottom: 10px;
     }
     
-    /* 로고 이미지 강제 중앙 정렬 및 크기 고정 (글씨 잘림 방지) */
-    .centered-logo {
+    /* 로고 강제 중앙 정렬 */
+    .logo-container {
         display: flex;
+        flex-direction: column;
         justify-content: center;
         align-items: center;
-        margin-bottom: 10px;
-        width: 100%; /* 컨테이너 너비 꽉 채움 */
+        text-align: center;
+        margin-bottom: 20px;
     }
-    .centered-logo img {
-        width: 150px; /* 로고 크기 고정 (조절 가능) */
-        height: auto; /* 비율 유지 */
-        object-fit: contain; /* 이미지가 잘리지 않게 영역 안에 맞춤 */
+    .logo-container img {
+        width: 120px; 
+        height: auto;
+        margin-bottom: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -111,7 +128,6 @@ FILES = {
 def is_admin():
     return st.session_state.get("role") in ["Manager", "관리자"]
 
-# 이미지 파일을 base64로 변환하는 함수 (HTML 태그에서 쓰기 위함)
 def get_img_as_base64(file):
     with open(file, "rb") as f:
         data = f.read()
@@ -167,31 +183,27 @@ init_db()
 # --- [5. 페이지별 기능 함수] ---
 
 def login_page():
-    # 로그인 화면 흰색 배경
     st.markdown("<style>.stApp {background-color: #FFFFFF;}</style>", unsafe_allow_html=True)
-    
     st.write("")
     
-    # [★수정됨] 로고 중앙 정렬 & 글씨 잘림 방지 (HTML/CSS)
+    logo_html = ""
     if os.path.exists("logo.png"):
         img_b64 = get_img_as_base64("logo.png")
-        st.markdown(
-            f"""
-            <div class="centered-logo">
-                <img src="data:image/png;base64,{img_b64}">
-            </div>
-            """, 
-            unsafe_allow_html=True
-        )
+        logo_html = f'<img src="data:image/png;base64,{img_b64}">'
     else:
-        st.markdown("<h1 style='text-align: center;'>🥐</h1>", unsafe_allow_html=True)
-        
-    # [★삭제됨] 중복된 '조각달과자점' 텍스트 삭제
-    # st.markdown("<h2 style='text-align: center; color: #4E342E; margin-top: 0px;'>조각달과자점</h2>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #8D6E63;'>따뜻한 마음을 굽는 업무 공간</p>", unsafe_allow_html=True)
-    st.write("")
+        logo_html = "<h1>🥐</h1>"
 
-    # 로그인 폼 중앙 배치
+    st.markdown(
+        f"""
+        <div class="logo-container">
+            {logo_html}
+            <h2 style='color: #4E342E; margin-top: 10px;'>조각달과자점</h2>
+            <p style='color: #8D6E63; font-size: 0.9rem;'>따뜻한 마음을 굽는 업무 공간</p>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+
     lc1, lc2, lc3 = st.columns([1, 8, 1]) 
     with lc2:
         tab1, tab2 = st.tabs(["로그인", "회원가입"])
