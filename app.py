@@ -18,7 +18,7 @@ st.set_page_config(
     page_title="조각달과자점", 
     page_icon="🥐", 
     layout="wide", 
-    initial_sidebar_state="expanded" # [수정됨] 모바일에서도 메뉴가 열린 상태로 시작
+    initial_sidebar_state="expanded" # PC에서도 항상 열림
 )
 
 # --- [1. 디자인 & CSS 설정] ---
@@ -41,8 +41,9 @@ st.markdown("""
         visibility: visible !important;
         background-color: transparent !important;
     }
-    [data-testid="stHeader"] button {
-        color: #4E342E !important; 
+    /* 햄버거 버튼 숨기기 (사이드바가 항상 떠있으므로 불필요) */
+    [data-testid="stHeader"] {
+        display: none !important;
     }
 
     /* 불필요한 요소 숨기기 */
@@ -52,14 +53,32 @@ st.markdown("""
     [data-testid="stDecoration"] {display:none;} 
     [data-testid="stStatusWidget"] {visibility: hidden;} 
 
-    /* 모바일 키보드 대응 */
+    /* [★핵심 수정] 모바일 사이드바 강력 고정 */
     @media (max-width: 768px) {
-        .main .block-container {
-            padding-bottom: 400px !important; 
+        /* 1. 사이드바 강제 표시 및 고정 */
+        section[data-testid="stSidebar"] {
+            display: block !important;
+            width: 180px !important; /* 메뉴 너비 고정 (화면 너무 가리지 않게 조절) */
+            min-width: 180px !important;
+            transform: translateX(0) !important; /* 숨김 애니메이션 무력화 */
+            visibility: visible !important;
+            z-index: 1000 !important; /* 맨 위로 올림 */
         }
-        /* 모바일 사이드바 너비 고정 */
-        [data-testid="stSidebar"] {
-            width: 250px !important; 
+        
+        /* 2. 닫기 버튼(X, >>) 아예 숨김 */
+        [data-testid="stSidebarCollapseButton"] {
+            display: none !important;
+        }
+
+        /* 3. 본문 내용이 사이드바에 가려지지 않게 오른쪽으로 밀기 */
+        .main .block-container {
+            margin-left: 180px !important; /* 사이드바 너비만큼 밀기 */
+            width: calc(100% - 180px) !important; /* 남은 공간만 쓰기 */
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+            padding-top: 1rem !important;
+            max-width: none !important;
+            padding-bottom: 100px !important;
         }
     }
 
@@ -223,6 +242,7 @@ def login_page():
         unsafe_allow_html=True
     )
 
+    # 로그인 폼 중앙 배치
     lc1, lc2, lc3 = st.columns([1, 8, 1]) 
     with lc2:
         tab1, tab2 = st.tabs(["로그인", "회원가입"])
@@ -340,6 +360,8 @@ def page_board(category_name, emoji):
                     st.rerun()
     else:
         st.info("등록된 글이 없습니다.")
+
+# [레시피 메뉴 함수 삭제됨]
 
 def page_checklist():
     st.header("✅ 체크리스트")
@@ -645,7 +667,7 @@ def main_app():
         st.write(f"안녕하세요, **{st.session_state['name']}**님!")
         st.caption(f"직책: {st.session_state['role']}")
         
-        # [수정됨] '레시피' 메뉴 제거
+        # [수정됨] '레시피' 삭제 완료
         menu = option_menu(
             menu_title=None,
             options=["공지사항", "스케줄", "예약 현황", "체크리스트", "매뉴얼", "관리자"],
