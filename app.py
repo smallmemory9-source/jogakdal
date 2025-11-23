@@ -34,14 +34,30 @@ st.markdown("""
         .main .block-container {
             padding-left: 1rem !important;
             padding-right: 1rem !important;
-            padding-top: 2rem !important; /* 상단 버튼 가리지 않게 여백 확보 */
+            padding-top: 2rem !important;
             max-width: 100% !important;
         }
-        /* 모바일에서 폰트 크기 조절 */
-        h1 { font-size: 1.8rem !important; }
-        h2 { font-size: 1.5rem !important; }
-        h3 { font-size: 1.2rem !important; }
     }
+
+    /* [요청사항 1] 로고 이미지 중앙 정렬 (강제 적용) */
+    [data-testid="stImage"] {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100%;
+        margin: 0 auto;
+    }
+    [data-testid="stImage"] > img {
+        margin: 0 auto !important;
+        display: block !important;
+    }
+
+    /* [요청사항 2] 하단 푸터(빨간 네모 부분) 완벽하게 숨기기 */
+    footer {visibility: hidden !important;}
+    #MainMenu {visibility: hidden !important;}
+    .stDeployButton {display:none !important;}
+    div[data-testid="stDecoration"] {display:none;} /* 상단 장식 줄 숨김 */
+    header {visibility: hidden !important;} /* 상단 헤더 숨김 (앱처럼 보이게) */
 
     /* 버튼 디자인 (모바일 터치하기 좋게) */
     .stButton>button {
@@ -49,11 +65,11 @@ st.markdown("""
         color: white;
         border-radius: 15px;
         border: none;
-        padding: 0.6rem 1rem; /* 터치 영역 확보 */
+        padding: 0.6rem 1rem;
         font-weight: bold;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         transition: all 0.3s;
-        width: 100%; /* 버튼을 항상 가로로 꽉 차게 */
+        width: 100%;
     }
     .stButton>button:hover {
         background-color: #6D4C41;
@@ -66,32 +82,18 @@ st.markdown("""
         border-radius: 10px;
         border: 1px solid #BCAAA4;
         background-color: #FFFFFF;
-        height: 45px; /* 터치하기 좋게 높이 키움 */
+        height: 45px;
     }
 
     /* 컨테이너 (카드) 스타일 */
     [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
         background-color: #FFFFFF;
-        padding: 15px; /* 모바일 고려 패딩 축소 */
+        padding: 15px;
         border-radius: 15px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         border: 1px solid #EFEBE9;
         margin-bottom: 10px;
     }
-
-    /* 상단 헤더 스타일 (메뉴 버튼 보이게 수정됨) */
-    header[data-testid="stHeader"] {
-        background-color: transparent;
-    }
-    /* 햄버거 메뉴 버튼 색상 조정 (배경과 어울리게) */
-    .css-14xtw13 {
-        color: #4E342E;
-    }
-    
-    /* 불필요한 Streamlit 요소 숨기기 */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    .stDeployButton {display:none;}
     
     /* 탭 디자인 */
     .stTabs [data-baseweb="tab-list"] {
@@ -101,7 +103,7 @@ st.markdown("""
         background-color: #F5E6D3;
         border-radius: 10px 10px 0 0;
         color: #5D4037;
-        flex: 1; /* 탭이 화면 너비를 꽉 채우도록 */
+        flex: 1;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
         background-color: #FFFFFF;
@@ -177,30 +179,16 @@ init_db()
 # --- [5. 페이지별 기능 함수] ---
 
 def login_page():
-    # 배경을 흰색으로 설정하고, 이미지를 강제로 중앙 정렬하는 CSS 추가
-    st.markdown("""
-        <style>
-        .stApp {background-color: #FFFFFF;}
-        /* 이미지(로고) 중앙 정렬을 위한 CSS */
-        div[data-testid="stImage"] {
-            display: block;
-            margin-left: auto;
-            margin-right: auto;
-            text-align: center;
-        }
-        div[data-testid="stImage"] > img {
-            margin: 0 auto;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+    # 로그인 화면 전용 흰색 배경
+    st.markdown("<style>.stApp {background-color: #FFFFFF;}</style>", unsafe_allow_html=True)
     
-    # 모바일에서 가운데 정렬을 확실하게 하기 위해 컬럼 대신 컨테이너 사용
+    # 컨테이너로 감싸서 중앙 정렬 효과 극대화
     with st.container():
         st.write("") # 상단 여백
         
-        # [로고 이미지] - CSS로 자동 중앙 정렬됨
+        # [요청 1] 로고 이미지 (CSS로 인해 자동 중앙 정렬됨)
         if os.path.exists("logo.png"):
-            st.image("logo.png", width=120)
+            st.image("logo.png", width=150) # 로고 크기 적절히 조절
         else:
             st.markdown("<h1 style='text-align: center;'>🥐</h1>", unsafe_allow_html=True)
             
@@ -208,8 +196,8 @@ def login_page():
         st.markdown("<p style='text-align: center; color: #8D6E63;'>따뜻한 마음을 굽는 업무 공간</p>", unsafe_allow_html=True)
         st.write("")
 
-        # 로그인 폼도 중앙에 좁게 배치하기 위해 컬럼 사용
-        lc1, lc2, lc3 = st.columns([1, 8, 1]) # 모바일에서는 꽉 차게, PC에서는 적당하게
+        # 로그인 폼 중앙 배치
+        lc1, lc2, lc3 = st.columns([1, 8, 1]) 
         with lc2:
             tab1, tab2 = st.tabs(["로그인", "회원가입"])
             with tab1:
@@ -680,7 +668,7 @@ def page_admin():
 # --- [6. 메인 앱 실행] ---
 def main_app():
     with st.sidebar:
-        # 로고 이미지 삭제 요청 반영
+        # 로고 삭제 요청 반영 (이미지 코드 제거)
         st.write(f"안녕하세요, **{st.session_state['name']}**님!")
         st.caption(f"직책: {st.session_state['role']}")
         
