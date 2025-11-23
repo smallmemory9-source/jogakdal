@@ -6,7 +6,6 @@ from datetime import datetime
 from streamlit_calendar import calendar
 
 # --- [0. 디자인 설정] 앱 이름 및 아이콘 설정 ---
-# page_icon을 "logo.png"로 설정하여 인터넷 탭에 로고가 뜨게 함
 st.set_page_config(
     page_title="조각달과자점", 
     page_icon="logo.png", 
@@ -14,7 +13,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 🎨 전문 디자이너의 커스텀 CSS 적용 (브라운 베이커리 테마)
+# 🎨 전문 디자이너의 커스텀 CSS 적용 (화이트 & 브라운 테마)
 st.markdown("""
     <style>
     /* 폰트 적용 */
@@ -24,9 +23,9 @@ st.markdown("""
         color: #4E342E;
     }
 
-    /* --- 전체 배경 --- */
+    /* --- 전체 배경: 흰색으로 변경 --- */
     .stApp {
-        background-color: #FFFBE6;
+        background-color: #FFFFFF; 
     }
 
     /* --- 사이드바 --- */
@@ -62,7 +61,7 @@ st.markdown("""
     .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input, .stTimeInput>div>div>input, .stDateInput>div>div>input {
         border: 2px solid #BCAAA4;
         border-radius: 8px;
-        background-color: #FFFFFF;
+        background-color: #FAFAFA; /* 입력창 내부 살짝 회색조 */
         color: #4E342E;
     }
     .stTextInput>div>div>input:focus, .stSelectbox>div>div>div[data-baseweb="select"]:focus-within {
@@ -83,10 +82,10 @@ st.markdown("""
         border: 1px solid transparent;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background-color: #FFFBE6;
+        background-color: #FFFFFF; /* 탭 선택시 배경 흰색 */
         color: #3E2723;
         border-color: #BCAAA4;
-        border-bottom-color: #FFFBE6;
+        border-bottom-color: #FFFFFF;
         font-weight: bold;
     }
 
@@ -174,19 +173,23 @@ def save(key, df): df.to_csv(FILES[key], index=False)
 
 # --- [5. 로그인 화면] ---
 def login_page():
-    # 화면을 3분할해서 가운데 정렬
-    c1, c2, c3 = st.columns([1,2,1])
+    # 화면을 3분할해서 가운데(c2)에 내용 배치
+    c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
-        # [로고 이미지 표시]
-        if os.path.exists("logo.png"):
-            st.image("logo.png", use_container_width=True)
-        else:
-            # 로고 파일이 없을 경우 텍스트로 대체
-            st.title("🥐 조각달과자점")
-            
-        st.markdown("<h5 style='text-align: center; color: #6D4C41;'>따뜻한 하루를 시작하는 업무 공간</h5>", unsafe_allow_html=True)
+        # [로고 이미지]
+        # 정가운데 정렬을 위해 다시 컬럼을 나눕니다.
+        l1, l2, l3 = st.columns([1, 1, 1]) 
+        with l2:
+            if os.path.exists("logo.png"):
+                # width=120: 로고 크기를 120픽셀로 고정 (약 1/6 크기)
+                st.image("logo.png", width=120) 
+            else:
+                st.title("🥐")
         
-        st.write("") 
+        # 제목 및 부제목 (가운데 정렬)
+        st.markdown("<h2 style='text-align: center; margin-top: -10px;'>조각달과자점</h2>", unsafe_allow_html=True)
+        st.markdown("<h5 style='text-align: center; color: #8D6E63; margin-bottom: 30px;'>따뜻한 하루를 시작하는 업무 공간</h5>", unsafe_allow_html=True)
+        
         tab1, tab2 = st.tabs(["🔑 로그인", "📝 회원가입"])
         with tab1:
             with st.form("login_form"):
@@ -217,7 +220,7 @@ def login_page():
                         save("users", pd.concat([users, new_row], ignore_index=True))
                         st.success("가입되었습니다! 로그인해주세요.")
 
-# --- [기능 1] 게시판 (공지/매뉴얼) ---
+# --- [기능 1] 게시판 ---
 def page_board(category_name, emoji):
     st.header(f"{emoji} {category_name}")
     if "edit_post_id" not in st.session_state: st.session_state.edit_post_id = None
@@ -659,7 +662,7 @@ def page_admin():
 def main_app():
     # 사이드바 디자인 적용
     with st.sidebar:
-        # 사이드바에 로고 작게 표시
+        # 사이드바에 로고 작게 표시 (약 100px)
         if os.path.exists("logo.png"):
             st.image("logo.png", width=100)
             
