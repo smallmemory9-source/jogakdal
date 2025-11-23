@@ -29,7 +29,7 @@ st.markdown("""
         background-color: #FFF3E0;
     }
 
-    /* [모바일 최적화 핵심] 화면이 좁을 때 여백을 줄여서 넓게 쓰기 */
+    /* [모바일 최적화 핵심] 화면 여백 조절 */
     @media (max-width: 768px) {
         .main .block-container {
             padding-left: 1rem !important;
@@ -39,27 +39,17 @@ st.markdown("""
         }
     }
 
-    /* [요청사항 1] 로고 이미지 중앙 정렬 (강제 적용) */
-    [data-testid="stImage"] {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        width: 100%;
-        margin: 0 auto;
-    }
-    [data-testid="stImage"] > img {
-        margin: 0 auto !important;
-        display: block !important;
-    }
-
-    /* [요청사항 2] 하단 푸터(빨간 네모 부분) 완벽하게 숨기기 */
-    footer {visibility: hidden !important;}
+    /* [요청사항 2] 하단 푸터(Hosted with Streamlit) 강력하게 숨기기 */
+    footer {visibility: hidden !important; height: 0px !important;}
     #MainMenu {visibility: hidden !important;}
     .stDeployButton {display:none !important;}
-    div[data-testid="stDecoration"] {display:none;} /* 상단 장식 줄 숨김 */
-    header {visibility: hidden !important;} /* 상단 헤더 숨김 (앱처럼 보이게) */
+    div[data-testid="stDecoration"] {display:none;} 
+    header {visibility: hidden !important;} 
+    
+    /* 하단 고정 배너 숨김 (Streamlit 버전에 따라 다를 수 있어 추가) */
+    [data-testid="stStatusWidget"] {visibility: hidden !important;}
 
-    /* 버튼 디자인 (모바일 터치하기 좋게) */
+    /* 버튼 디자인 */
     .stButton>button {
         background-color: #8D6E63;
         color: white;
@@ -88,7 +78,7 @@ st.markdown("""
     /* 컨테이너 (카드) 스타일 */
     [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
         background-color: #FFFFFF;
-        padding: 15px;
+        padding: 15px; 
         border-radius: 15px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         border: 1px solid #EFEBE9;
@@ -103,7 +93,7 @@ st.markdown("""
         background-color: #F5E6D3;
         border-radius: 10px 10px 0 0;
         color: #5D4037;
-        flex: 1;
+        flex: 1; 
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
         background-color: #FFFFFF;
@@ -182,21 +172,25 @@ def login_page():
     # 로그인 화면 전용 흰색 배경
     st.markdown("<style>.stApp {background-color: #FFFFFF;}</style>", unsafe_allow_html=True)
     
-    # 컨테이너로 감싸서 중앙 정렬 효과 극대화
+    # 중앙 정렬을 위한 컨테이너
     with st.container():
         st.write("") # 상단 여백
         
-        # [요청 1] 로고 이미지 (CSS로 인해 자동 중앙 정렬됨)
-        if os.path.exists("logo.png"):
-            st.image("logo.png", width=150) # 로고 크기 적절히 조절
-        else:
-            st.markdown("<h1 style='text-align: center;'>🥐</h1>", unsafe_allow_html=True)
+        # [요청 1 해결] 로고 중앙 정렬을 위한 컬럼 3분할 (가장 확실한 방법)
+        # 1(빈공간) : 1(로고) : 1(빈공간) 비율로 나누면 로고가 무조건 가운데 옵니다.
+        col1, col2, col3 = st.columns([1, 1, 1])
+        
+        with col2:
+            if os.path.exists("logo.png"):
+                st.image("logo.png", width=150) 
+            else:
+                st.markdown("<h1 style='text-align: center;'>🥐</h1>", unsafe_allow_html=True)
             
         st.markdown("<h2 style='text-align: center; color: #4E342E; margin-top: 10px;'>조각달과자점</h2>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: #8D6E63;'>따뜻한 마음을 굽는 업무 공간</p>", unsafe_allow_html=True)
         st.write("")
 
-        # 로그인 폼 중앙 배치
+        # 로그인 폼 중앙 배치 (모바일에서도 적당한 너비 유지)
         lc1, lc2, lc3 = st.columns([1, 8, 1]) 
         with lc2:
             tab1, tab2 = st.tabs(["로그인", "회원가입"])
