@@ -40,7 +40,7 @@ st.markdown("""
         background-color: transparent !important;
     }
     [data-testid="stHeader"] {
-        display: none !important; /* 사이드바 고정이므로 햄버거 버튼 불필요 */
+        display: none !important; 
     }
 
     /* 불필요한 요소 숨기기 */
@@ -50,42 +50,63 @@ st.markdown("""
     [data-testid="stDecoration"] {display:none;} 
     [data-testid="stStatusWidget"] {visibility: hidden;} 
 
-    /* [★핵심 수정] 모바일 화면 구조 재배치 (겹침 방지) */
+    /* [★핵심 수정] 모바일 사이드바 초슬림 다이어트 */
     @media (max-width: 768px) {
-        /* 1. 사이드바 강제 고정 및 너비 설정 */
+        /* 1. 사이드바 너비 대폭 축소 (120px) */
         section[data-testid="stSidebar"] {
             display: block !important;
-            width: 170px !important; /* 메뉴 너비 */
-            min-width: 170px !important;
-            transform: none !important; /* 애니메이션 제거 */
+            width: 120px !important; 
+            min-width: 120px !important;
+            transform: none !important; 
             visibility: visible !important;
             z-index: 100 !important;
         }
         
+        /* 사이드바 내부 여백 줄이기 */
+        section[data-testid="stSidebar"] > div {
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+            padding-top: 1rem;
+        }
+
         /* 닫기 버튼 숨김 */
         [data-testid="stSidebarCollapseButton"] {
             display: none !important;
         }
 
-        /* 2. 메인 본문 영역을 사이드바만큼 오른쪽으로 밀기 (겹침 해결) */
+        /* 2. 메인 본문 영역 여백 조정 */
         section[data-testid="stMain"] {
-            margin-left: 170px !important; /* 사이드바 너비만큼 여백 줌 */
-            width: calc(100% - 170px) !important; /* 남은 공간만 사용 */
+            margin-left: 120px !important; /* 사이드바 너비만큼만 밀기 */
+            width: calc(100% - 120px) !important; 
         }
 
-        /* 3. 본문 내부 패딩 및 하단 여백(키보드 대응) */
+        /* 3. 메뉴 폰트 사이즈 축소 */
+        .nav-link {
+            font-size: 12px !important; /* 글씨 작게 */
+            padding: 8px !important; /* 버튼 높이 줄이기 */
+            margin: 2px !important;
+        }
+        /* 아이콘 크기도 축소 */
+        .bi {
+            font-size: 14px !important; 
+        }
+        
+        /* 사이드바 안의 텍스트(안녕하세요 등) 크기 줄임 */
+        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
+            font-size: 0.8rem !important;
+        }
+        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+            font-size: 1rem !important;
+        }
+
+        /* 본문 하단 여백 (키보드 대응) */
         .block-container {
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
             padding-top: 1rem !important;
-            padding-bottom: 400px !important; /* 키보드 올라올 때 공간 확보 */
+            padding-bottom: 400px !important; 
             max-width: none !important;
         }
-        
-        /* 모바일 폰트 크기 미세 조정 */
-        h1 { font-size: 1.5rem !important; }
-        h2 { font-size: 1.2rem !important; }
-        p, div { font-size: 0.9rem !important; }
     }
 
     /* 버튼 디자인 */
@@ -665,13 +686,11 @@ def page_admin():
 # --- [6. 메인 앱 실행] ---
 def main_app():
     with st.sidebar:
-        # 로고 표시
-        if os.path.exists("logo.png"):
-            st.image("logo.png", width=100)
+        # 로고 삭제 요청 반영 (이미지 코드 제거)
         st.write(f"안녕하세요, **{st.session_state['name']}**님!")
         st.caption(f"직책: {st.session_state['role']}")
         
-        # [수정됨] 레시피 메뉴 삭제
+        # [수정됨] '레시피' 메뉴 삭제 & 글씨 크기 축소 적용
         menu = option_menu(
             menu_title=None,
             options=["공지사항", "스케줄", "예약 현황", "체크리스트", "매뉴얼", "관리자"],
@@ -680,8 +699,8 @@ def main_app():
             default_index=0,
             styles={
                 "container": {"padding": "0!important", "background-color": "#F5E6D3"},
-                "icon": {"color": "#5D4037", "font-size": "18px"}, 
-                "nav-link": {"font-size": "16px", "text-align": "left", "margin":"0px", "--hover-color": "#D7CCC8", "color": "#4E342E"},
+                "icon": {"color": "#5D4037", "font-size": "14px"}, 
+                "nav-link": {"font-size": "13px", "text-align": "left", "margin":"0px", "--hover-color": "#D7CCC8", "color": "#4E342E"},
                 "nav-link-selected": {"background-color": "#8D6E63", "color": "white"},
             }
         )
