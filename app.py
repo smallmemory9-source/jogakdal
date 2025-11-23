@@ -3,12 +3,10 @@ import pandas as pd
 import os
 import math
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime
 from streamlit_calendar import calendar
 from streamlit_option_menu import option_menu
-# [추가됨] 쿠키 매니저 (자동 로그인을 위해 필요)
-# pip install streamlit-cookies-manager 로 설치 필요
-# 설치가 안 되어 있다면 try-except로 에러 방지
+# [쿠키 매니저]
 try:
     from streamlit_cookies_manager import CookieManager
 except ImportError:
@@ -20,7 +18,7 @@ st.set_page_config(
     page_title="조각달과자점", 
     page_icon="🥐", 
     layout="wide", 
-    initial_sidebar_state="expanded" # [요청사항] 사이드바 항상 펼침 (PC/태블릿)
+    initial_sidebar_state="expanded" # [수정됨] 모바일에서도 메뉴가 열린 상태로 시작
 )
 
 # --- [1. 디자인 & CSS 설정] ---
@@ -54,14 +52,14 @@ st.markdown("""
     [data-testid="stDecoration"] {display:none;} 
     [data-testid="stStatusWidget"] {visibility: hidden;} 
 
-    /* 모바일 키보드 대응 (하단 여백) */
+    /* 모바일 키보드 대응 */
     @media (max-width: 768px) {
         .main .block-container {
             padding-bottom: 400px !important; 
         }
-        /* 모바일에서 사이드바 너비 최적화 */
+        /* 모바일 사이드바 너비 고정 */
         [data-testid="stSidebar"] {
-            width: 250px !important;
+            width: 250px !important; 
         }
     }
 
@@ -186,7 +184,7 @@ def save(key, df): df.to_csv(FILES[key], index=False)
 
 init_db()
 
-# [★추가됨] 쿠키 매니저 초기화 (자동 로그인용)
+# [쿠키 매니저 초기화]
 cookies = CookieManager()
 if not cookies.ready():
     st.stop()
@@ -197,11 +195,9 @@ def login_page():
     st.markdown("<style>.stApp {background-color: #FFFFFF;}</style>", unsafe_allow_html=True)
     st.write("")
     
-    # [★추가됨] 자동 로그인 체크
     if cookies.get("auto_login") == "true":
         saved_id = cookies.get("saved_id")
         saved_pw = cookies.get("saved_pw")
-        
         if saved_id and saved_pw:
             users = load("users")
             user = users[(users["username"] == saved_id) & (users["password"] == saved_pw)]
@@ -234,9 +230,7 @@ def login_page():
             with st.form("login_form"):
                 user_id = st.text_input("아이디")
                 user_pw = st.text_input("비밀번호", type="password")
-                
-                # [★추가됨] 자동 로그인 체크박스
-                auto_login = st.checkbox("자동 로그인 (다음부터 바로 입장)")
+                auto_login = st.checkbox("자동 로그인")
                 
                 submit = st.form_submit_button("입장하기")
                 
@@ -245,19 +239,15 @@ def login_page():
                     user = users[(users["username"] == user_id) & (users["password"] == user_pw)]
                     if not user.empty:
                         st.session_state.update({"logged_in": True, "username": user_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
-                        
-                        # [★추가됨] 쿠키 저장 로직
                         if auto_login:
                             cookies["auto_login"] = "true"
                             cookies["saved_id"] = user_id
-                            cookies["saved_pw"] = user_pw # 실제 서비스에선 암호화 필요
+                            cookies["saved_pw"] = user_pw
                             cookies.save()
                         else:
-                            # 체크 해제 시 쿠키 삭제
                             if cookies.get("auto_login"):
                                 cookies["auto_login"] = "false"
                                 cookies.save()
-                                
                         st.rerun()
                     else:
                         st.error("정보를 확인해주세요.")
@@ -350,72 +340,6 @@ def page_board(category_name, emoji):
                     st.rerun()
     else:
         st.info("등록된 글이 없습니다.")
-
-def page_recipe():
-    st.header("🥐 레시피")
-    RECIPE_CATS = ["빵", "케이크", "구움과자", "음료", "기타"]
-    if "edit_post_id" not in st.session_state: st.session_state.edit_post_id = None
-    
-    if is_admin():
-        with st.expander("➕ 레시피 등록"):
-            with st.form("write_recipe"):
-                r_cat = st.selectbox("종류", RECIPE_CATS)
-                r_title = st.text_input("제품명")
-                r_content = st.text_area("레시피 내용")
-                if st.form_submit_button("저장"):
-                    df = load("posts")
-                    new_id = 1 if df.empty else df["id"].max() + 1
-                    new_row = pd.DataFrame([{
-                        "id": new_id, "category": "레시피", "sub_category": r_cat,
-                        "title": r_title, "content": r_content, "author": st.session_state["name"],
-                        "date": datetime.now().strftime("%Y-%m-%d")
-                    }])
-                    save("posts", pd.concat([df, new_row], ignore_index=True))
-                    st.rerun()
-
-    tabs = st.tabs(RECIPE_CATS)
-    df = load("posts")
-    recipe_df = df[df["category"] == "레시피"]
-    
-    for i, cat_name in enumerate(RECIPE_CATS):
-        with tabs[i]:
-            cat_df = recipe_df[recipe_df["sub_category"] == cat_name].sort_values(by="id", ascending=False)
-            if not cat_df.empty:
-                for idx, row in cat_df.iterrows():
-                    label = f"{row['title']} - {row['author']}"
-                    with st.expander(label, expanded=(st.session_state.edit_post_id == row['id'])):
-                        if st.session_state.edit_post_id == row['id']:
-                            with st.form(f"edit_recipe_{row['id']}"):
-                                e_cat = st.selectbox("종류", RECIPE_CATS, index=RECIPE_CATS.index(row['sub_category']) if row['sub_category'] in RECIPE_CATS else 0)
-                                e_title = st.text_input("제품명", value=row['title'])
-                                e_content = st.text_area("내용", value=row['content'])
-                                c1, c2 = st.columns(2)
-                                if c1.form_submit_button("저장"):
-                                    df_all = load("posts")
-                                    df_all.loc[df_all["id"] == row['id'], "sub_category"] = e_cat
-                                    df_all.loc[df_all["id"] == row['id'], "title"] = e_title
-                                    df_all.loc[df_all["id"] == row['id'], "content"] = e_content
-                                    save("posts", df_all)
-                                    st.session_state.edit_post_id = None
-                                    st.rerun()
-                                if c2.form_submit_button("취소"):
-                                    st.session_state.edit_post_id = None
-                                    st.rerun()
-                        else:
-                            st.markdown(row['content'])
-                            if is_admin():
-                                st.divider()
-                                c1, c2 = st.columns([1, 9])
-                                if c1.button("수정", key=f"er_{row['id']}"):
-                                    st.session_state.edit_post_id = row['id']
-                                    st.rerun()
-                                if c2.button("삭제", key=f"dr_{row['id']}"):
-                                    df_all = load("posts")
-                                    df_all = df_all[df_all["id"] != row['id']]
-                                    save("posts", df_all)
-                                    st.rerun()
-            else:
-                st.caption("등록된 레시피가 없습니다.")
 
 def page_checklist():
     st.header("✅ 체크리스트")
@@ -716,14 +640,16 @@ def page_admin():
 # --- [6. 메인 앱 실행] ---
 def main_app():
     with st.sidebar:
-        # 로고 삭제 요청 반영 (이미지 코드 제거)
+        if os.path.exists("logo.png"):
+            st.image("logo.png", width=100)
         st.write(f"안녕하세요, **{st.session_state['name']}**님!")
         st.caption(f"직책: {st.session_state['role']}")
         
+        # [수정됨] '레시피' 메뉴 제거
         menu = option_menu(
             menu_title=None,
-            options=["공지사항", "스케줄", "예약 현황", "체크리스트", "레시피", "매뉴얼", "관리자"],
-            icons=['megaphone', 'calendar-week', 'calendar-check', 'check2-square', 'book', 'journal-text', 'gear'],
+            options=["공지사항", "스케줄", "예약 현황", "체크리스트", "매뉴얼", "관리자"],
+            icons=['megaphone', 'calendar-week', 'calendar-check', 'check2-square', 'journal-text', 'gear'],
             menu_icon="cast",
             default_index=0,
             styles={
@@ -737,7 +663,6 @@ def main_app():
         if st.button("로그아웃", use_container_width=True):
             st.session_state["logged_in"] = False
             st.session_state["admin_unlocked"] = False 
-            # [★추가] 로그아웃 시 쿠키 삭제
             if cookies.get("auto_login"):
                 cookies["auto_login"] = "false"
                 cookies.save()
@@ -747,7 +672,6 @@ def main_app():
     elif menu == "스케줄": page_schedule()
     elif menu == "예약 현황": page_reservation()
     elif menu == "체크리스트": page_checklist()
-    elif menu == "레시피": page_recipe()
     elif menu == "매뉴얼": page_board("회사 매뉴얼", "📘")
     elif menu == "관리자": page_admin()
 
