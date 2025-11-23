@@ -2,52 +2,46 @@ import streamlit as st
 import pandas as pd
 import os
 import math
+import base64 # 로고 이미지 처리를 위한 라이브러리 추가
 from datetime import datetime
 from streamlit_calendar import calendar
-from streamlit_option_menu import option_menu # 네비게이션 메뉴 라이브러리
+from streamlit_option_menu import option_menu
 
-# --- [0. 기본 설정] 앱 이름 및 아이콘 ---
+# --- [0. 기본 설정] ---
 st.set_page_config(
     page_title="조각달과자점", 
     page_icon="🥐", 
     layout="wide", 
-    initial_sidebar_state="collapsed" # 모바일 친화적: 시작할 때 사이드바 숨김
+    initial_sidebar_state="collapsed" # 모바일에서는 처음에 메뉴 닫힘
 )
 
-# --- [1. 디자인: 모바일 최적화 & 따뜻한 테마 CSS] ---
+# --- [1. 디자인 & CSS 설정] ---
 st.markdown("""
     <style>
-    /* 폰트 설정 (Noto Sans KR) */
+    /* 폰트 설정 */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
     html, body, [class*="css"]  {
         font-family: 'Noto Sans KR', sans-serif;
         color: #4E342E;
     }
 
-    /* 전체 배경색 */
+    /* 배경색 */
     .stApp {
         background-color: #FFF3E0;
     }
 
-    /* [모바일 최적화 핵심] 화면 여백 조절 */
-    @media (max-width: 768px) {
-        .main .block-container {
-            padding-left: 1rem !important;
-            padding-right: 1rem !important;
-            padding-top: 2rem !important;
-            max-width: 100% !important;
-        }
+    /* [수정됨] 상단 헤더 다시 표시 (메뉴 버튼 살리기 위함) */
+    header {
+        visibility: visible !important;
+        background-color: transparent !important;
     }
 
-    /* [요청사항 2] 하단 푸터(Hosted with Streamlit) 강력하게 숨기기 */
-    footer {visibility: hidden !important; height: 0px !important;}
-    #MainMenu {visibility: hidden !important;}
-    .stDeployButton {display:none !important;}
-    div[data-testid="stDecoration"] {display:none;} 
-    header {visibility: hidden !important;} 
-    
-    /* 하단 고정 배너 숨김 (Streamlit 버전에 따라 다를 수 있어 추가) */
-    [data-testid="stStatusWidget"] {visibility: hidden !important;}
+    /* [요청사항] 거슬리는 요소들만 콕 집어서 숨기기 */
+    #MainMenu {visibility: hidden;} /* 우측 상단 점3개 메뉴 숨김 */
+    .stDeployButton {display:none;} /* Deploy 버튼 숨김 */
+    footer {visibility: hidden;} /* 하단 Footer 숨김 */
+    [data-testid="stDecoration"] {display:none;} /* 상단 무지개 장식 줄 숨김 */
+    [data-testid="stStatusWidget"] {visibility: hidden;} /* 우측 하단 상태 표시 숨김 */
 
     /* 버튼 디자인 */
     .stButton>button {
@@ -75,30 +69,26 @@ st.markdown("""
         height: 45px;
     }
 
-    /* 컨테이너 (카드) 스타일 */
+    /* 컨테이너 스타일 */
     [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
         background-color: #FFFFFF;
-        padding: 15px; 
+        padding: 15px;
         border-radius: 15px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         border: 1px solid #EFEBE9;
         margin-bottom: 10px;
     }
     
-    /* 탭 디자인 */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 5px;
+    /* 로고 이미지 강제 중앙 정렬을 위한 클래스 */
+    .centered-logo {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-bottom: 10px;
     }
-    .stTabs [data-baseweb="tab"] {
-        background-color: #F5E6D3;
-        border-radius: 10px 10px 0 0;
-        color: #5D4037;
-        flex: 1; 
-    }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
-        background-color: #FFFFFF;
-        font-weight: bold;
-        color: #3E2723;
+    .centered-logo img {
+        width: 120px; /* 로고 크기 고정 */
+        border-radius: 50%; /* 원형 이미지를 원하면 추가 */
     }
     </style>
     """, unsafe_allow_html=True)
@@ -118,6 +108,12 @@ FILES = {
 # --- [3. 유틸리티 함수] ---
 def is_admin():
     return st.session_state.get("role") in ["Manager", "관리자"]
+
+# 이미지 파일을 base64로 변환하는 함수 (HTML 태그에서 쓰기 위함)
+def get_img_as_base64(file):
+    with open(file, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
 
 def init_db():
     if not os.path.exists(FILES["users"]):
@@ -169,58 +165,60 @@ init_db()
 # --- [5. 페이지별 기능 함수] ---
 
 def login_page():
-    # 로그인 화면 전용 흰색 배경
+    # 로그인 화면 흰색 배경
     st.markdown("<style>.stApp {background-color: #FFFFFF;}</style>", unsafe_allow_html=True)
     
-    # 중앙 정렬을 위한 컨테이너
-    with st.container():
-        st.write("") # 상단 여백
+    st.write("")
+    
+    # [★수정됨] 로고 중앙 정렬 (HTML/CSS 강제 적용)
+    if os.path.exists("logo.png"):
+        img_b64 = get_img_as_base64("logo.png")
+        st.markdown(
+            f"""
+            <div class="centered-logo">
+                <img src="data:image/png;base64,{img_b64}">
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
+    else:
+        st.markdown("<h1 style='text-align: center;'>🥐</h1>", unsafe_allow_html=True)
         
-        # [요청 1 해결] 로고 중앙 정렬을 위한 컬럼 3분할 (가장 확실한 방법)
-        # 1(빈공간) : 1(로고) : 1(빈공간) 비율로 나누면 로고가 무조건 가운데 옵니다.
-        col1, col2, col3 = st.columns([1, 1, 1])
-        
-        with col2:
-            if os.path.exists("logo.png"):
-                st.image("logo.png", width=150) 
-            else:
-                st.markdown("<h1 style='text-align: center;'>🥐</h1>", unsafe_allow_html=True)
-            
-        st.markdown("<h2 style='text-align: center; color: #4E342E; margin-top: 10px;'>조각달과자점</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #8D6E63;'>따뜻한 마음을 굽는 업무 공간</p>", unsafe_allow_html=True)
-        st.write("")
+    st.markdown("<h2 style='text-align: center; color: #4E342E; margin-top: 0px;'>조각달과자점</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #8D6E63;'>따뜻한 마음을 굽는 업무 공간</p>", unsafe_allow_html=True)
+    st.write("")
 
-        # 로그인 폼 중앙 배치 (모바일에서도 적당한 너비 유지)
-        lc1, lc2, lc3 = st.columns([1, 8, 1]) 
-        with lc2:
-            tab1, tab2 = st.tabs(["로그인", "회원가입"])
-            with tab1:
-                with st.form("login_form"):
-                    user_id = st.text_input("아이디")
-                    user_pw = st.text_input("비밀번호", type="password")
-                    submit = st.form_submit_button("입장하기")
-                    if submit:
-                        users = load("users")
-                        user = users[(users["username"] == user_id) & (users["password"] == user_pw)]
-                        if not user.empty:
-                            st.session_state.update({"logged_in": True, "username": user_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
-                            st.rerun()
-                        else:
-                            st.error("정보를 확인해주세요.")
-            with tab2:
-                with st.form("signup_form"):
-                    new_id = st.text_input("희망 아이디")
-                    new_pw = st.text_input("희망 비밀번호", type="password")
-                    new_name = st.text_input("이름 (실명)")
-                    submit = st.form_submit_button("가입 신청")
-                    if submit:
-                        users = load("users")
-                        if new_id in users["username"].values:
-                            st.warning("이미 존재하는 아이디입니다.")
-                        else:
-                            new_row = pd.DataFrame([{"username": new_id, "password": new_pw, "name": new_name, "role": "Staff"}])
-                            save("users", pd.concat([users, new_row], ignore_index=True))
-                            st.success("가입되었습니다! 로그인해주세요.")
+    # 로그인 폼 중앙 배치
+    lc1, lc2, lc3 = st.columns([1, 8, 1]) 
+    with lc2:
+        tab1, tab2 = st.tabs(["로그인", "회원가입"])
+        with tab1:
+            with st.form("login_form"):
+                user_id = st.text_input("아이디")
+                user_pw = st.text_input("비밀번호", type="password")
+                submit = st.form_submit_button("입장하기")
+                if submit:
+                    users = load("users")
+                    user = users[(users["username"] == user_id) & (users["password"] == user_pw)]
+                    if not user.empty:
+                        st.session_state.update({"logged_in": True, "username": user_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
+                        st.rerun()
+                    else:
+                        st.error("정보를 확인해주세요.")
+        with tab2:
+            with st.form("signup_form"):
+                new_id = st.text_input("희망 아이디")
+                new_pw = st.text_input("희망 비밀번호", type="password")
+                new_name = st.text_input("이름 (실명)")
+                submit = st.form_submit_button("가입 신청")
+                if submit:
+                    users = load("users")
+                    if new_id in users["username"].values:
+                        st.warning("이미 존재하는 아이디입니다.")
+                    else:
+                        new_row = pd.DataFrame([{"username": new_id, "password": new_pw, "name": new_name, "role": "Staff"}])
+                        save("users", pd.concat([users, new_row], ignore_index=True))
+                        st.success("가입되었습니다! 로그인해주세요.")
 
 def page_board(category_name, emoji):
     st.header(f"{emoji} {category_name}")
