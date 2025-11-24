@@ -147,12 +147,12 @@ if not cookies.ready(): st.stop()
 
 # --- [날짜 시각화 함수] ---
 def render_monthly_calendar(sched_df, res_df, key_prefix):
-    today = date.today().strftime("%Y-%m-%d")
+    # 이 함수는 page_schedule 또는 page_reservation 함수 내부에서 호출되므로, 
+    # st.session_state의 키가 존재함이 보장됨.
     
-    # 현재 선택된 날짜 (입력창과 연동됨)
+    today = date.today().strftime("%Y-%m-%d")
     selected_date_str = st.session_state[f"{key_prefix}_selected_date"]
 
-    # 현재 날짜의 연도와 월을 추출
     current_date_obj = datetime.strptime(selected_date_str, "%Y-%m-%d")
     
     st.subheader(f"🗓️ {current_date_obj.year}년 {current_date_obj.month}월")
@@ -165,7 +165,6 @@ def render_monthly_calendar(sched_df, res_df, key_prefix):
         # 이 Selectbox를 통해 월을 이동
         selected_month_str = st.selectbox("월 이동", months_list, index=3, key=f"{key_prefix}_month_select")
         
-    # 선택된 월 객체
     selected_month_obj = datetime.strptime(selected_month_str, "%Y년 %m월")
     
     # 만약 선택된 월이 현재 세션 날짜와 다르면, 세션 날짜를 해당 월 1일로 변경
@@ -177,8 +176,6 @@ def render_monthly_calendar(sched_df, res_df, key_prefix):
     # 달력 생성을 위한 날짜 계산
     first_day_of_month = selected_month_obj.replace(day=1)
     start_day_of_week = first_day_of_month.weekday() 
-    
-    # 달력 시작 날짜 (월요일 기준이므로 일요일로 맞추기 위해 1일의 요일 -1)
     start_date = first_day_of_month - timedelta(days=start_day_of_week) 
     
     weeks = 6 
@@ -240,6 +237,7 @@ def render_monthly_calendar(sched_df, res_df, key_prefix):
                 """
                 
                 # 버튼 클릭 시 세션 상태 변경 및 새로고침
+                # 키를 매번 다르게 생성하여 클릭 이벤트를 강제 인식시킴
                 if st.button(
                     button_label, 
                     key=f"{key_prefix}_cal_btn_{day_str}", 
@@ -480,17 +478,7 @@ def page_schedule():
 
 def page_reservation():
     st.header("📅 예약 현황")
-    # [오류 해결] 초기화 보장
-    if "res_selected_date" not in st.session_state: st.session_state.res_selected_date = datetime.now().strftime("%Y-%m-%d")
-    if "edit_res_id" not in st.session_state: st.session_state.edit_res_id = None
-
-    res_df = load("reservations")
-    res_logs = load("reservation_logs")
-    res_menu = load("reservation_menu")
-    menu_list = res_menu["item_name"].tolist()
-
-    if "id" not in res_df.columns: res_df["id"] = range(1, len(res_df) + 1); save("reservations", res_df)
-
+    
     # 1. [상단] 날짜 선택기
     sel_date_obj = datetime.strptime(st.session_state.res_selected_date, "%Y-%m-%d").date()
 
@@ -503,6 +491,13 @@ def page_reservation():
     if new_sel_date_obj != sel_date_obj:
         st.session_state.res_selected_date = new_sel_date_obj.strftime("%Y-%m-%d")
         st.rerun()
+
+    res_df = load("reservations")
+    res_logs = load("reservation_logs")
+    res_menu = load("reservation_menu")
+    menu_list = res_menu["item_name"].tolist()
+
+    if "id" not in res_df.columns: res_df["id"] = range(1, len(res_df) + 1); save("reservations", res_df)
 
     sel_date = st.session_state.res_selected_date
     st.subheader(f"🍰 {sel_date} 예약")
@@ -574,7 +569,6 @@ def page_reservation():
     render_monthly_calendar(pd.DataFrame(columns=['date']), res_df, "res")
 
 
-# --- [관리자 및 메인 앱 실행] ---
 def page_admin():
     st.header("⚙️ 관리자 설정")
     if "admin_unlocked" not in st.session_state: st.session_state.admin_unlocked = False
@@ -604,7 +598,7 @@ def page_admin():
         if st.button("메뉴 저장"): save("reservation_menu", edited_menu); st.success("저장됨")
 
 def main_app():
-    # [오류 해결] 모든 세션 상태 초기화 보장
+    # [★수정] 초기화 코드를 main_app 최상단으로 이동 (오류 방지)
     if "selected_date" not in st.session_state: st.session_state.selected_date = datetime.now().strftime("%Y-%m-%d")
     if "res_selected_date" not in st.session_state: st.session_state.res_selected_date = datetime.now().strftime("%Y-%m-%d")
     if "edit_sch_id" not in st.session_state: st.session_state.edit_sch_id = None
