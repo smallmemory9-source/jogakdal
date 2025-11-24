@@ -94,7 +94,7 @@ def get_img_as_base64(file):
 def load(key): return pd.read_csv(FILES[key])
 def save(key, df): df.to_csv(FILES[key], index=False)
 
-# 데이터 파일 초기화 (필요한 것만 생성)
+# 데이터 파일 초기화
 def init_db():
     if not os.path.exists(FILES["users"]):
         pd.DataFrame({"username": ["admin"], "password": ["1234"], "name": ["사장님"], "role": ["Manager"]}).to_csv(FILES["users"], index=False)
@@ -283,9 +283,10 @@ def page_schedule():
     if is_admin():
         with st.expander(f"➕ {sel_date} 근무 추가", expanded=True):
             with st.form("add_sch"):
-                # [핵심 수정] key에 날짜 포함 -> 날짜 변경 시 입력창 초기화 강제
+                users = load("users")
+                # [핵심] 입력창의 기본값을 '선택된 날짜'로 설정 & key에 날짜 포함하여 강제 갱신
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"sch_d_{sel_date}")
-                s_user = st.selectbox("직원", load("users")["name"].unique())
+                s_user = st.selectbox("직원", users["name"].unique())
                 times = [f"{h:02d}:00" for h in range(6, 24)]
                 c1, c2 = st.columns(2)
                 s_start = c1.selectbox("출근", times, index=3)
@@ -336,15 +337,36 @@ def page_schedule():
 
     st.divider()
     events = []
+    # 1. 실제 스케줄 이벤트
     if not sched_df.empty:
         for idx, row in sched_df.iterrows():
             events.append({"title": f"{row['start_time']} {row['user']}", "start": row['date'], "end": row['date'], "backgroundColor": row['role'], "borderColor": row['role'], "allDay": True})
-
-    # [★수정] 달력 클릭 이벤트
-    cal = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": False, "dateClick": True}, callbacks=['dateClick'], key="sch_cal")
     
-    if cal.get("dateClick"):
-        clicked = cal["dateClick"]["date"].split("T")[0]
+    # 2. [핵심 수정] 클릭된 날짜를 '연두색 배경'으로 표시하는 가짜 이벤트 추가
+    # 이렇게 하면 클릭된 날짜가 시각적으로 확실히 보입니다.
+    if sel_date:
+        events.append({
+            "title": "", # 제목 없음 (배경색만 표시)
+            "start": sel_date,
+            "end": sel_date,
+            "display": "background", # 배경 이벤트로 설정
+            "backgroundColor": "#DCEDC8" # 연두색
+        })
+
+    # [핵심 수정] 달력 옵션 설정
+    cal_options = {
+        "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
+        "initialView": "dayGridMonth",
+        "initialDate": sel_date, # 달력이 현재 선택된 날짜가 있는 달을 보여주도록 함
+        "selectable": False,
+        "dateClick": True,
+    }
+
+    cal_output = calendar(events=events, options=cal_options, callbacks=['dateClick'], key="sch_cal")
+    
+    # [핵심 수정] 클릭 감지 로직
+    if cal_output.get("dateClick"):
+        clicked = cal_output["dateClick"]["date"].split("T")[0]
         if st.session_state.selected_date != clicked:
             st.session_state.selected_date = clicked
             st.rerun()
@@ -370,6 +392,7 @@ def page_reservation():
                 st.error("등록된 메뉴가 없습니다.")
                 st.form_submit_button("불가")
             else:
+                # [핵심] key에 날짜 포함
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"res_d_{sel_date}")
                 c1, c2 = st.columns(2)
                 r_item = c1.selectbox("메뉴", menu_list)
@@ -430,8 +453,22 @@ def page_reservation():
         for idx, row in res_df.iterrows():
             events.append({"title": f"{row['time']} {row['customer_name']}", "start": row['date'], "end": row['date'], "backgroundColor": "#D7CCC8", "borderColor": "#8D6E63", "allDay": True, "textColor": "#3E2723"})
 
-    # [★수정] 달력 클릭 이벤트
-    cal = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": False, "dateClick": True}, callbacks=['dateClick'], key="res_cal")
+    # [핵심 수정] 클릭된 날짜 표시 (연두색)
+    if sel_date:
+        events.append({
+            "title": "", "start": sel_date, "end": sel_date,
+            "display": "background", "backgroundColor": "#DCEDC8"
+        })
+
+    cal_options = {
+        "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
+        "initialView": "dayGridMonth",
+        "initialDate": sel_date, # 달력 시작 날짜를 선택된 날짜로 맞춤
+        "selectable": False,
+        "dateClick": True,
+    }
+
+    cal = calendar(events=events, options=cal_options, callbacks=['dateClick'], key="res_cal")
     
     if cal.get("dateClick"):
         clicked = cal["dateClick"]["date"].split("T")[0]
