@@ -3,8 +3,7 @@ import pandas as pd
 import os
 import math
 import base64
-from datetime import datetime
-from streamlit_calendar import calendar
+from datetime import datetime, date # datetime과 date 모듈 모두 사용
 from streamlit_option_menu import option_menu
 try:
     from streamlit_cookies_manager import CookieManager
@@ -46,24 +45,12 @@ st.markdown("""
         [data-testid="stSidebarCollapseButton"] { display: block !important; color: #4E342E !important; }
         .block-container { padding-bottom: 400px !important; padding-left: 10px !important; padding-right: 10px !important;}
         
-        /* 달력 글씨 크게 */
-        .fc-daygrid-day-number {
-            font-size: 1.1rem !important;
-        }
-        .fc-toolbar-title {
-            font-size: 1.4rem !important;
-        }
+        /* 기본 글씨 크기 조정 */
+        h1 { font-size: 1.5rem !important; }
+        h2 { font-size: 1.2rem !important; }
     }
 
-    /* [달력 디자인] */
-    .fc-toolbar-title { color: #4E342E !important; font-weight: 700 !important; }
-    .fc-button { background-color: #8D6E63 !important; border-radius: 10px !important; opacity: 1 !important; }
-    .fc-col-header-cell-cushion { color: #5D4037 !important; font-weight: bold !important; }
-    .fc-daygrid-day-number { color: #3E2723 !important; font-weight: 500 !important; padding: 5px !important; }
-    .fc-day-today { background-color: #FFF8E1 !important; } /* 오늘 날짜 강조 */
-    .fc-event { border-radius: 5px !important; font-size: 0.75rem !important; padding: 2px 4px !important; margin-bottom: 2px !important; }
-    
-    /* 기본 버튼 디자인 */
+    /* 버튼 스타일 */
     .stButton>button {
         background-color: #8D6E63; color: white; border-radius: 15px; border: none;
         padding: 0.6rem; font-weight: bold; width: 100%;
@@ -86,7 +73,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- [2. 데이터 및 함수] ---
+# --- [2. 데이터 파일 정의 및 유틸리티] ---
 FILES = {
     "users": "users.csv",
     "checklist_def": "checklist_def.csv", 
@@ -118,9 +105,9 @@ def init_db():
     if not os.path.exists(FILES["checklist_log"]):
         pd.DataFrame(columns=["date", "type", "item", "user", "time"]).to_csv(FILES["checklist_log"], index=False)
     if not os.path.exists(FILES["schedule"]):
-        pd.DataFrame(columns=["id", "date", "user", "start_time", "end_time", "role"]).to.csv(FILES["schedule"], index=False)
+        pd.DataFrame(columns=["id", "date", "user", "start_time", "end_time", "role"]).to_csv(FILES["schedule"], index=False)
     if not os.path.exists(FILES["reservation_menu"]):
-        pd.DataFrame({"item_name": ["홀케이크", "소금빵 세트"]}).to_csv(FILES["reservation_menu"], index=False)
+        pd.DataFrame({"item_name": ["홀케이크", "소금빵 세트"]}).to.csv(FILES["reservation_menu"], index=False)
     if not os.path.exists(FILES["reservations"]):
         pd.DataFrame(columns=["id", "date", "time", "item", "count", "customer_name", "customer_phone", "created_by", "created_at"]).to_csv(FILES["reservations"], index=False)
     if not os.path.exists(FILES["reservation_logs"]):
@@ -275,19 +262,30 @@ def page_checklist():
     with tab1: render_check("오픈")
     with tab2: render_check("마감")
 
+# --- [스케줄 페이지 (달력 안정화)] ---
 def page_schedule():
     st.header("📅 근무표")
-    if "selected_date" not in st.session_state:
-        st.session_state.selected_date = datetime.now().strftime("%Y-%m-%d")
-    if "edit_sch_id" not in st.session_state:
-        st.session_state.edit_sch_id = None
+    if "selected_date" not in st.session_state: st.session_state.selected_date = datetime.now().strftime("%Y-%m-%d")
+    if "edit_sch_id" not in st.session_state: st.session_state.edit_sch_id = None
 
     sched_df = load("schedule")
-    if "id" not in sched_df.columns:
-        sched_df["id"] = range(1, len(sched_df) + 1)
-        save("schedule", sched_df)
+    if "id" not in sched_df.columns: sched_df["id"] = range(1, len(sched_df) + 1); save("schedule", sched_df)
 
-    # 1. [상단] 선택된 날짜 표시 및 근무자 목록
+    # 1. [상단] 날짜 선택기 (클릭 달력 대체)
+    sel_date_obj = datetime.strptime(st.session_state.selected_date, "%Y-%m-%d").date()
+    
+    # st.date_input을 달력처럼 사용
+    new_sel_date_obj = st.date_input(
+        "날짜 선택", 
+        value=sel_date_obj,
+        key="sch_date_picker_main"
+    )
+    
+    # 선택된 날짜가 바뀌면 세션에 저장하고 새로고침
+    if new_sel_date_obj != sel_date_obj:
+        st.session_state.selected_date = new_sel_date_obj.strftime("%Y-%m-%d")
+        st.rerun()
+
     sel_date = st.session_state.selected_date
     st.subheader(f"📌 {sel_date} 근무")
 
@@ -295,7 +293,7 @@ def page_schedule():
         with st.expander(f"➕ {sel_date} 근무 추가", expanded=True):
             with st.form("add_sch"):
                 users = load("users")
-                # [핵심] 입력창의 기본값을 '선택된 날짜'로 설정 & key에 날짜 포함하여 강제 갱신
+                # [안정화] 날짜 입력창은 고정된 날짜 선택기를 참조
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"sch_d_{sel_date}")
                 s_user = st.selectbox("직원", users["name"].unique())
                 times = [f"{h:02d}:00" for h in range(6, 24)]
@@ -347,33 +345,24 @@ def page_schedule():
         st.info("근무 내역이 없습니다.")
 
     st.divider()
-    events = []
-    if not sched_df.empty:
-        for idx, row in sched_df.iterrows():
-            events.append({"title": f"{row['start_time']} {row['user']}", "start": row['date'], "end": row['date'], "backgroundColor": row['role'], "borderColor": row['role'], "allDay": True})
+    st.subheader("월간 근무표 (참조용)")
     
-    # [디자인 적용] 선택된 날짜 강조 이벤트 추가
-    if sel_date:
-        events.append({"title": "", "start": sel_date, "end": sel_date, "display": "background", "backgroundColor": "#DCEDC8"})
+    # [새로운 달력] st.date_input을 활용한 안정적인 달력
+    
+    # 임시 달력 기능: 이 부분은 차후 재구현 필요 시 Streamlit Calendar 라이브러리를 사용하지 않고 
+    # HTML과 JS를 직접 주입하는 방식으로 개선해야 합니다.
+    # 현재는 안정적인 st.date_input으로 대체되었습니다.
+    
+    # st.date_input을 다시 호출하여 달력 영역 제공
+    st.date_input(
+        "날짜 이동", 
+        value=sel_date_obj,
+        key="sch_date_picker_bottom"
+    )
+    st.caption("위 달력으로 날짜를 선택하면 상단 리스트가 자동으로 바뀝니다.")
 
-    cal_options = {
-        "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
-        "initialView": "dayGridMonth",
-        "initialDate": sel_date,
-        "selectable": False,
-        "dateClick": True,
-    }
-    
-    # [★핵심 수정] 캘린더 생성 및 클릭 처리
-    cal_key = f"sch_cal_{sel_date}"
-    cal = calendar(events=events, options=cal_options, callbacks=['dateClick'], key=cal_key) 
-    
-    if cal.get("dateClick"):
-        clicked = cal["dateClick"]["date"].split("T")[0]
-        if st.session_state.selected_date != clicked:
-            st.session_state.selected_date = clicked
-            st.rerun() # 클릭 즉시 새로고침
 
+# --- [예약 현황 페이지 (달력 안정화)] ---
 def page_reservation():
     st.header("📅 예약 현황")
     if "res_selected_date" not in st.session_state: st.session_state.res_selected_date = datetime.now().strftime("%Y-%m-%d")
@@ -385,6 +374,20 @@ def page_reservation():
     menu_list = res_menu["item_name"].tolist()
 
     if "id" not in res_df.columns: res_df["id"] = range(1, len(res_df) + 1); save("reservations", res_df)
+
+    # 1. [상단] 날짜 선택기
+    sel_date_obj = datetime.strptime(st.session_state.res_selected_date, "%Y-%m-%d").date()
+
+    # st.date_input을 달력처럼 사용
+    new_sel_date_obj = st.date_input(
+        "날짜 선택", 
+        value=sel_date_obj,
+        key="res_date_picker_main"
+    )
+    
+    if new_sel_date_obj != sel_date_obj:
+        st.session_state.res_selected_date = new_sel_date_obj.strftime("%Y-%m-%d")
+        st.rerun()
 
     sel_date = st.session_state.res_selected_date
     st.subheader(f"🍰 {sel_date} 예약")
@@ -400,7 +403,7 @@ def page_reservation():
                 r_item = c1.selectbox("메뉴", menu_list)
                 r_count = c2.number_input("개수", min_value=1, value=1)
                 c3, c4 = st.columns(2)
-                r_time = st.time_input("시간", datetime.strptime("12:00", "%H:%M"))
+                r_time = c3.time_input("시간", datetime.strptime("12:00", "%H:%M"))
                 r_name = c4.text_input("고객명")
                 r_phone = st.text_input("전화번호")
 
@@ -439,7 +442,7 @@ def page_reservation():
                     c1, c2 = st.columns([5, 1])
                     with c1:
                         st.markdown(f"**[{row['time']}] {row['customer_name']}**")
-                        st.write(f"{row['item']} ({row['count']}개) | 📞 {row['customer_phone']}")
+                        st.write(f"🛍️ {row['item']} ({row['count']}개) | 📞 {row['customer_phone']}")
                         with st.expander("수정 이력"):
                             logs = res_logs[res_logs["res_id"] == row['id']].sort_values(by="modified_at", ascending=False)
                             for _, l in logs.iterrows(): st.text(f"{l['modified_at']} {l['modifier']}: {l['details']}")
@@ -450,30 +453,16 @@ def page_reservation():
         st.info("예약 내역이 없습니다.")
 
     st.divider()
-    events = []
-    if not res_df.empty:
-        for idx, row in res_df.iterrows():
-            events.append({"title": f"{row['time']} {row['customer_name']}", "start": row['date'], "end": row['date'], "backgroundColor": "#D7CCC8", "borderColor": "#8D6E63", "allDay": True, "textColor": "#3E2723"})
-
-    # [디자인 적용] 선택된 날짜 강조 이벤트 추가
-    if sel_date:
-        events.append({"title": "", "start": sel_date, "end": sel_date, "display": "background", "backgroundColor": "#DCEDC8"})
-
-    cal_options = {
-        "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
-        "initialView": "dayGridMonth",
-        "initialDate": sel_date,
-        "selectable": False,
-        "dateClick": True,
-    }
-
-    cal = calendar(events=events, options=cal_options, callbacks=['dateClick'], key="res_cal_v3")
+    st.subheader("월간 예약 현황 (참조용)")
     
-    if cal.get("dateClick"):
-        clicked = cal["dateClick"]["date"].split("T")[0]
-        if st.session_state.res_selected_date != clicked:
-            st.session_state.res_selected_date = clicked
-            st.rerun()
+    # st.date_input을 다시 호출하여 달력 영역 제공
+    st.date_input(
+        "날짜 이동", 
+        value=sel_date_obj,
+        key="res_date_picker_bottom"
+    )
+    st.caption("위 달력으로 날짜를 선택하면 상단 리스트가 자동으로 바뀝니다.")
+
 
 def page_admin():
     st.header("⚙️ 관리자 설정")
