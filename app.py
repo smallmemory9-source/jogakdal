@@ -21,81 +21,88 @@ st.set_page_config(
 )
 
 # --- [1. 디자인 & CSS 설정] ---
-def get_img_as_base64(file):
-    with open(file, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
-
-# 로고 파일 처리 (없을 경우 대비)
-logo_b64 = ""
-if os.path.exists("logo.png"):
-    logo_b64 = get_img_as_base64("logo.png")
-
-# [수정됨] 안전한 방식의 메타 태그 삽입 (아이콘 설정)
-# f-string 안에서 중괄호 {} 사용 시 이중 중괄호 {{}} 로 감싸야 에러가 안 남
-st.markdown(
-    f"""
+st.markdown("""
     <style>
     /* 폰트 설정 */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
-    html, body, [class*="css"]  {{
+    html, body, [class*="css"]  {
         font-family: 'Noto Sans KR', sans-serif;
         color: #4E342E;
-    }}
+    }
 
     /* 배경색 */
-    .stApp {{
+    .stApp {
         background-color: #FFF3E0;
-    }}
+    }
 
-    /* 상단 헤더 스타일 */
-    header {{
-        visibility: visible !important;
+    /* 상단 헤더 투명처리 및 햄버거 버튼 숨김 */
+    header {
         background-color: transparent !important;
-    }}
-    [data-testid="stHeader"] {{
-        background: transparent !important;
-    }}
-    /* 햄버거 메뉴 아이콘 색상 */
-    button[kind="header"] {{
-        color: #4E342E !important;
-    }}
+    }
+    [data-testid="stHeader"] {
+        display: none !important; 
+    }
 
     /* 불필요한 요소 숨기기 */
-    #MainMenu {{visibility: hidden;}}
-    .stDeployButton {{display:none;}} 
-    footer {{visibility: hidden;}} 
-    [data-testid="stDecoration"] {{display:none;}} 
-    [data-testid="stStatusWidget"] {{visibility: hidden;}} 
+    #MainMenu {visibility: hidden;}
+    .stDeployButton {display:none;} 
+    footer {visibility: hidden;} 
+    [data-testid="stDecoration"] {display:none;} 
+    [data-testid="stStatusWidget"] {visibility: hidden;} 
 
-    /* [모바일 최적화] 사이드바 & 본문 */
-    @media (max-width: 768px) {{
-        /* 사이드바 너비 고정 (120px) */
-        section[data-testid="stSidebar"] {{
+    /* [모바일 사이드바 초슬림 다이어트] */
+    @media (max-width: 768px) {
+        section[data-testid="stSidebar"] {
+            display: block !important;
             width: 120px !important; 
             min-width: 120px !important;
-        }}
+            transform: none !important; 
+            visibility: visible !important;
+            z-index: 100 !important;
+        }
         
-        /* 본문 여백 조정 */
-        section[data-testid="stMain"] {{
-            /* 사이드바가 expanded 상태일 때 본문 밀기 */
-            margin-left: 0 !important; 
-        }}
+        section[data-testid="stSidebar"] > div {
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+            padding-top: 1rem;
+        }
+
+        [data-testid="stSidebarCollapseButton"] {
+            display: none !important;
+        }
+
+        section[data-testid="stMain"] {
+            margin-left: 120px !important; 
+            width: calc(100% - 120px) !important; 
+        }
+
+        .nav-link {
+            font-size: 12px !important; 
+            padding: 8px !important; 
+            margin: 2px !important;
+        }
+        .bi {
+            font-size: 14px !important; 
+        }
         
-        /* 하단 여백 (키보드 대응) */
-        .block-container {{
-            padding-bottom: 400px !important;
-        }}
-        
-        /* 사이드바 폰트 축소 */
-        .nav-link {{
-            font-size: 12px !important;
-            padding: 8px !important;
-        }}
-    }}
+        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
+            font-size: 0.8rem !important;
+        }
+        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+            font-size: 1rem !important;
+        }
+
+        .block-container {
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+            padding-top: 1rem !important;
+            padding-bottom: 400px !important; 
+            max-width: none !important;
+        }
+    }
 
     /* 버튼 디자인 */
-    .stButton>button {{
+    .stButton>button {
         background-color: #8D6E63;
         color: white;
         border-radius: 15px;
@@ -105,45 +112,45 @@ st.markdown(
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         transition: all 0.3s;
         width: 100%;
-    }}
-    .stButton>button:hover {{
+    }
+    .stButton>button:hover {
         background-color: #6D4C41;
         color: #FFF8E1;
         transform: translateY(-1px);
-    }}
+    }
 
     /* 입력창 스타일 */
-    .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input, .stDateInput>div>div>input, .stTimeInput>div>div>input {{
+    .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input, .stDateInput>div>div>input, .stTimeInput>div>div>input {
         border-radius: 10px;
         border: 1px solid #BCAAA4;
         background-color: #FFFFFF;
         height: 45px;
-    }}
+    }
 
     /* 컨테이너 스타일 */
-    [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {{
+    [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
         background-color: #FFFFFF;
         padding: 15px;
         border-radius: 15px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         border: 1px solid #EFEBE9;
         margin-bottom: 10px;
-    }}
+    }
     
-    /* 로고 강제 중앙 정렬 클래스 */
-    .logo-container {{
+    /* 로고 강제 중앙 정렬 */
+    .logo-container {
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
         text-align: center;
         margin-bottom: 20px;
-    }}
-    .logo-container img {{
+    }
+    .logo-container img {
         width: 120px; 
         height: auto;
         margin-bottom: 10px;
-    }}
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -162,6 +169,11 @@ FILES = {
 # --- [3. 유틸리티 함수] ---
 def is_admin():
     return st.session_state.get("role") in ["Manager", "관리자"]
+
+def get_img_as_base64(file):
+    with open(file, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
 
 def init_db():
     if not os.path.exists(FILES["users"]):
@@ -420,15 +432,7 @@ def page_schedule():
                 "backgroundColor": color, "borderColor": color, "allDay": True
             })
 
-    cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": True, "dateClick": True}, callbacks=['dateClick'], key="sch_cal")
-    
-    if cal_output.get("dateClick"):
-        clicked = cal_output["dateClick"]["date"]
-        if st.session_state.selected_date != clicked:
-            st.session_state.selected_date = clicked
-            st.rerun()
-
-    st.divider()
+    # [순서 변경] 1. 상단: 선택된 날짜의 내용 표시
     sel_date = st.session_state.selected_date
     st.subheader(f"📌 {sel_date} 근무")
 
@@ -500,6 +504,16 @@ def page_schedule():
     else:
         st.info("근무 내역이 없습니다.")
 
+    # [순서 변경] 2. 하단: 달력 표시
+    st.divider()
+    cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": True, "dateClick": True}, callbacks=['dateClick'], key="sch_cal")
+    
+    if cal_output.get("dateClick"):
+        clicked = cal_output["dateClick"]["date"]
+        if st.session_state.selected_date != clicked:
+            st.session_state.selected_date = clicked
+            st.rerun()
+
 def page_reservation():
     st.header("📅 예약 현황")
     if "res_selected_date" not in st.session_state: st.session_state.res_selected_date = datetime.now().strftime("%Y-%m-%d")
@@ -523,15 +537,7 @@ def page_reservation():
                 "backgroundColor": "#D7CCC8", "borderColor": "#8D6E63", "allDay": True, "textColor": "#3E2723"
             })
 
-    cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": True, "dateClick": True}, callbacks=['dateClick'], key="res_cal")
-    
-    if cal_output.get("dateClick"):
-        clicked = cal_output["dateClick"]["date"]
-        if st.session_state.res_selected_date != clicked:
-            st.session_state.res_selected_date = clicked
-            st.rerun()
-
-    st.divider()
+    # [순서 변경] 1. 상단: 선택된 날짜의 내용 표시
     sel_date = st.session_state.res_selected_date
     st.subheader(f"🍰 {sel_date} 예약")
 
@@ -620,6 +626,16 @@ def page_reservation():
                             st.rerun()
     else:
         st.info("예약 내역이 없습니다.")
+
+    # [순서 변경] 2. 하단: 달력 표시
+    st.divider()
+    cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": True, "dateClick": True}, callbacks=['dateClick'], key="res_cal")
+    
+    if cal_output.get("dateClick"):
+        clicked = cal_output["dateClick"]["date"]
+        if st.session_state.res_selected_date != clicked:
+            st.session_state.res_selected_date = clicked
+            st.rerun()
 
 def page_admin():
     st.header("⚙️ 관리자 설정")
