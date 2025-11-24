@@ -140,7 +140,7 @@ def init_db():
     if not os.path.exists(FILES["reservations"]):
         pd.DataFrame(columns=["id", "date", "time", "item", "count", "customer_name", "customer_phone", "created_by", "created_at"]).to_csv(FILES["reservations"], index=False)
     if not os.path.exists(FILES["reservation_logs"]):
-        pd.DataFrame(columns=["res_id", "modifier", "modified_at", "details"]).to_csv(FILES["reservation_logs"], index=False)
+        pd.DataFrame(columns=["res_id", "modifier", "modified_at", "details"]).to.csv(FILES["reservation_logs"], index=False)
 
 init_db()
 
@@ -165,6 +165,7 @@ def render_monthly_calendar_stable(sched_df, res_df, key_prefix):
     
     col_sel, col_empty = st.columns([3, 7])
     with col_sel:
+        # 이 Selectbox를 통해 월을 이동
         selected_month_str = st.selectbox("월 이동", months_list, index=3, key=f"{key_prefix}_month_select")
         
     selected_month_obj = datetime.strptime(selected_month_str, "%Y년 %m월")
@@ -174,12 +175,14 @@ def render_monthly_calendar_stable(sched_df, res_df, key_prefix):
         st.session_state[f"{key_prefix}_selected_date"] = selected_month_obj.strftime("%Y-%m-01")
         st.rerun()
 
+
     # 2. [달력 구조 계산]
     first_day_of_month = selected_month_obj.replace(day=1)
     start_day_of_week = first_day_of_month.weekday() 
     start_date = first_day_of_month - timedelta(days=start_day_of_week) 
     weeks = 6 
     
+    # 데이터 전처리 (일별 근무자/예약 수 계산)
     schedule_counts = sched_df.groupby('date').size().to_dict()
     reservation_counts = res_df.groupby('date').size().to_dict()
     
@@ -206,7 +209,7 @@ def render_monthly_calendar_stable(sched_df, res_df, key_prefix):
             cell_class = "month-view-cell"
             if is_today: cell_class += " cell-today"
             if is_selected: cell_class += " cell-selected"
-            if not is_current_month: cell_class += " style='background-color: #F5E6D3; border-color: #EFEBE9;'" # 이전/다음 달 색상 흐리게
+            if not is_current_month: cell_class += " style='background-color: #F5E6D3; border-color: #EFEBE9;'"
                 
             style_color = 'red' if day_index == 6 else ('blue' if day_index == 5 else '#4E342E')
             if not is_current_month: style_color = '#BCAAA4' 
@@ -241,7 +244,7 @@ def render_monthly_calendar_stable(sched_df, res_df, key_prefix):
                     st.rerun()
 
 
-# --- [4. 페이지별 기능] ---
+# --- [3. 페이지별 기능] ---
 
 def login_page():
     st.markdown("<style>.stApp {background-color: #FFFFFF;}</style>", unsafe_allow_html=True)
@@ -467,6 +470,7 @@ def page_schedule():
     st.subheader("월간 근무 현황 (시각화)")
     
     # 2. [하단] 월간 시각화 테이블
+    # sched_df는 근무 데이터, res_df는 빈 데이터프레임 (예약 현황은 표시하지 않음)
     render_monthly_calendar_stable(sched_df, pd.DataFrame(columns=['date']), "sch")
 
 
