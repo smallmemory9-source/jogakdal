@@ -40,16 +40,16 @@ st.markdown("""
     @media (max-width: 768px) {
         section[data-testid="stSidebar"] {
             display: block !important;
-            width: 170px !important; 
-            min-width: 170px !important;
+            width: 120px !important; 
+            min-width: 120px !important;
             transform: none !important; 
             visibility: visible !important;
             z-index: 100 !important;
         }
         [data-testid="stSidebarCollapseButton"] { display: none !important; }
         section[data-testid="stMain"] {
-            margin-left: 170px !important; 
-            width: calc(100% - 170px) !important; 
+            margin-left: 120px !important; 
+            width: calc(100% - 120px) !important; 
         }
         .block-container {
             padding-left: 0.5rem !important;
@@ -283,7 +283,7 @@ def page_board(category_name, emoji):
                     st.write(row['content'])
                     if is_admin():
                         st.divider()
-                        c1, c2 = st.columns([1, 9])
+                        c1, c2 = st.columns([1, 1, 8])
                         if c1.button("수정", key=f"edt_{row['id']}"):
                             st.session_state.edit_post_id = row['id']
                             st.rerun()
@@ -296,7 +296,7 @@ def page_board(category_name, emoji):
             st.divider()
             cols = st.columns(total_pages + 2)
             for i in range(1, total_pages + 1):
-                if cols[i].button(str(i), key=f"pg_{category_name}_{i}", disabled=(i==current_page)):
+                if cols[i].button(str(i), key=f"btn_page_{category_name}_{i}", disabled=(i==current_page)):
                     st.session_state[page_key] = i
                     st.rerun()
     else:
@@ -353,7 +353,7 @@ def page_schedule():
         with st.expander(f"➕ {sel_date} 근무 추가", expanded=True):
             with st.form("add_sch"):
                 users = load("users")
-                # [핵심] key에 날짜를 포함시켜 날짜 변경 시 입력창도 즉시 업데이트
+                # key에 날짜 포함 -> 날짜 변경 시 입력창 즉시 업데이트
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"sch_d_{sel_date}")
                 s_user = st.selectbox("직원", users["name"].unique())
                 times = [f"{h:02d}:00" for h in range(6, 24)]
@@ -418,7 +418,7 @@ def page_schedule():
     else:
         st.info("근무 내역이 없습니다.")
 
-    # 2. [하단] 달력 표시 (가장 마지막에 배치)
+    # 2. [하단] 달력 표시 (selectable=False로 설정하여 클릭 충돌 방지)
     st.divider()
     events = []
     if not sched_df.empty:
@@ -430,7 +430,6 @@ def page_schedule():
                 "backgroundColor": color, "borderColor": color, "allDay": True
             })
             
-    # [수정] selectable=False로 설정하여 클릭 충돌 방지
     cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": False, "dateClick": True}, callbacks=['dateClick'], key="sch_cal")
     
     if cal_output.get("dateClick"):
@@ -463,7 +462,7 @@ def page_reservation():
                 st.error("등록된 메뉴가 없습니다.")
                 st.form_submit_button("불가")
             else:
-                # [핵심] key에 날짜 포함 -> 날짜 변경 시 입력창 초기화
+                # key에 날짜 포함 -> 날짜 변경 시 입력창 초기화
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"res_d_{sel_date}")
                 c1, c2 = st.columns(2)
                 r_item = c1.selectbox("메뉴", menu_list)
@@ -544,7 +543,7 @@ def page_reservation():
     else:
         st.info("예약 내역이 없습니다.")
 
-    # 2. [하단] 달력 표시 (가장 마지막에 배치)
+    # 2. [하단] 달력 표시 (selectable=False로 설정하여 클릭 충돌 방지)
     st.divider()
     events = []
     if not res_df.empty:
@@ -555,7 +554,6 @@ def page_reservation():
                 "backgroundColor": "#D7CCC8", "borderColor": "#8D6E63", "allDay": True, "textColor": "#3E2723"
             })
 
-    # [수정] selectable=False로 설정하여 클릭 충돌 방지
     cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": False, "dateClick": True}, callbacks=['dateClick'], key="res_cal")
     
     if cal_output.get("dateClick"):
