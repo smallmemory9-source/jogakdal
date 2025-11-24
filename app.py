@@ -17,7 +17,7 @@ st.set_page_config(
     page_title="조각달과자점", 
     page_icon="🥐", 
     layout="wide", 
-    initial_sidebar_state="collapsed" # [복구됨] 처음에 메뉴 닫힘 (>> 버튼 눌러야 열림)
+    initial_sidebar_state="expanded" 
 )
 
 # --- [1. 디자인 & CSS 설정] ---
@@ -30,12 +30,11 @@ st.markdown("""
     }
     .stApp { background-color: #FFF3E0; }
     
-    /* [복구됨] 상단 헤더 및 햄버거 버튼 다시 표시 */
+    /* 상단 헤더 및 햄버거 버튼 */
     header { 
         visibility: visible !important; 
         background-color: transparent !important; 
     }
-    /* 햄버거 버튼(메뉴 여는 버튼) 색상 */
     [data-testid="stHeader"] button { 
         color: #4E342E !important; 
     }
@@ -47,23 +46,25 @@ st.markdown("""
     [data-testid="stStatusWidget"] {visibility: hidden;} 
 
     @media (max-width: 768px) {
-        /* 모바일에서 사이드바 너비 적절히 조절 */
         section[data-testid="stSidebar"] {
-            width: 200px !important; 
+            width: 150px !important; /* 사이드바 슬림하게 */
         }
-        
-        /* [복구됨] 닫기 버튼 다시 표시 */
         [data-testid="stSidebarCollapseButton"] { 
             display: block !important; 
             color: #4E342E !important;
         }
-
         .block-container {
             padding-bottom: 400px !important; 
             max-width: none !important;
         }
         h1 { font-size: 1.5rem !important; }
         h2 { font-size: 1.2rem !important; }
+        
+        /* 사이드바 폰트 축소 */
+        .nav-link {
+            font-size: 12px !important;
+            padding: 8px !important;
+        }
     }
 
     .stButton>button {
@@ -300,7 +301,7 @@ def page_board(category_name, emoji):
             st.divider()
             cols = st.columns(total_pages + 2)
             for i in range(1, total_pages + 1):
-                if cols[i].button(str(i), key=f"btn_page_{category_name}_{i}", disabled=(i==current_page)):
+                if cols[i].button(str(i), key=f"pg_{category_name}_{i}", disabled=(i==current_page)):
                     st.session_state[page_key] = i
                     st.rerun()
     else:
@@ -349,7 +350,7 @@ def page_schedule():
         sched_df["id"] = range(1, len(sched_df) + 1)
         save("schedule", sched_df)
 
-    # 1. [상단] 선택된 날짜 표시 및 근무자 목록/추가
+    # 1. [상단] 선택된 날짜 표시 및 근무자 목록
     sel_date = st.session_state.selected_date
     st.subheader(f"📌 {sel_date} 근무")
 
@@ -357,6 +358,7 @@ def page_schedule():
         with st.expander(f"➕ {sel_date} 근무 추가", expanded=True):
             with st.form("add_sch"):
                 users = load("users")
+                # 날짜 변경 시 입력창 초기화를 위한 키값 설정
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"sch_d_{sel_date}")
                 s_user = st.selectbox("직원", users["name"].unique())
                 times = [f"{h:02d}:00" for h in range(6, 24)]
@@ -433,6 +435,7 @@ def page_schedule():
                 "backgroundColor": color, "borderColor": color, "allDay": True
             })
             
+    # [핵심 수정] selectable=False로 설정하여 클릭 오류 방지
     cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": False, "dateClick": True}, callbacks=['dateClick'], key="sch_cal")
     
     if cal_output.get("dateClick"):
@@ -455,6 +458,7 @@ def page_reservation():
         res_df["id"] = range(1, len(res_df) + 1)
         save("reservations", res_df)
 
+    # 1. [상단] 선택된 날짜 예약 리스트
     sel_date = st.session_state.res_selected_date
     st.subheader(f"🍰 {sel_date} 예약")
 
@@ -545,6 +549,7 @@ def page_reservation():
     else:
         st.info("예약 내역이 없습니다.")
 
+    # 2. [하단] 달력 표시 (selectable=False로 설정)
     st.divider()
     events = []
     if not res_df.empty:
