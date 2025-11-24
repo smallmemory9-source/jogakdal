@@ -70,8 +70,8 @@ st.markdown("""
     
     /* 월간 시각화 스타일 */
     .month-view-cell {
-        border: 1px solid #EFEBE9;
-        border-radius: 5px;
+        border: 1px solid #BCAAA4;
+        border-radius: 8px;
         padding: 5px;
         margin: 2px;
         min-height: 80px; /* 달력 셀 높이 확보 */
@@ -94,6 +94,11 @@ st.markdown("""
     .cell-today {
         background-color: #FFF8E1;
         border-color: #FFB74D;
+    }
+    .cell-selected {
+        background-color: #DCEDC8; /* 연두색 */
+        border-color: #8D6E63;
+        box-shadow: 0 0 5px rgba(141, 110, 99, 0.5);
     }
     </style>
     """, unsafe_allow_html=True)
@@ -147,10 +152,15 @@ if not cookies.ready(): st.stop()
 # --- [월간 시각화 함수 (안정화된 달력 형태 대체)] ---
 def render_monthly_calendar_stable(sched_df, res_df, key_prefix):
     today_str = date.today().strftime("%Y-%m-%d")
-    selected_date_str = st.session_state[f"{key_prefix}_selected_date"]
     
-    # [1] 월 이동 기능
+    # Session State에서 날짜를 안전하게 가져옴
+    selected_date_str = st.session_state[f"{key_prefix}_selected_date"]
+
     current_date_obj = datetime.strptime(selected_date_str, "%Y-%m-%d")
+    
+    st.subheader(f"🗓️ {current_date_obj.year}년 {current_date_obj.month}월")
+    
+    # 1. [월 이동 기능]
     months_list = [(current_date_obj.replace(day=1) + timedelta(days=30*i)).strftime("%Y년 %m월") for i in range(-3, 4)]
     
     col_sel, col_empty = st.columns([3, 7])
@@ -164,24 +174,23 @@ def render_monthly_calendar_stable(sched_df, res_df, key_prefix):
         st.session_state[f"{key_prefix}_selected_date"] = selected_month_obj.strftime("%Y-%m-01")
         st.rerun()
 
-    # [2] 달력 구조 계산
+    # 2. [달력 구조 계산]
     first_day_of_month = selected_month_obj.replace(day=1)
     start_day_of_week = first_day_of_month.weekday() 
     start_date = first_day_of_month - timedelta(days=start_day_of_week) 
     weeks = 6 
     
-    # 데이터 전처리 (일별 근무자/예약 수)
     schedule_counts = sched_df.groupby('date').size().to_dict()
     reservation_counts = res_df.groupby('date').size().to_dict()
     
-    # 요일 헤더
+    # 3. [요일 헤더]
     st.markdown("---")
     weekdays = ["월", "화", "수", "목", "금", "토", "일"]
     cols = st.columns(7)
     for i, day in enumerate(weekdays):
         cols[i].markdown(f"<div style='text-align:center; font-weight:bold; color:{'red' if day=='일' else ('blue' if day=='토' else '#4E342E')}'>{day}</div>", unsafe_allow_html=True)
 
-    # [3] 날짜 채우기 (클릭 가능한 버튼 활용)
+    # 4. [날짜 채우기 (클릭 가능한 버튼 활용)]
     for week in range(weeks):
         cols = st.columns(7)
         for day_index in range(7):
@@ -196,7 +205,8 @@ def render_monthly_calendar_stable(sched_df, res_df, key_prefix):
             # 셀 스타일
             cell_class = "month-view-cell"
             if is_today: cell_class += " cell-today"
-            if is_selected: cell_class += " schedule-day-selected"
+            if is_selected: cell_class += " cell-selected"
+            if not is_current_month: cell_class += " style='background-color: #F5E6D3; border-color: #EFEBE9;'" # 이전/다음 달 색상 흐리게
                 
             style_color = 'red' if day_index == 6 else ('blue' if day_index == 5 else '#4E342E')
             if not is_current_month: style_color = '#BCAAA4' 
@@ -208,12 +218,12 @@ def render_monthly_calendar_stable(sched_df, res_df, key_prefix):
             if sch_count > 0: content += f'<div><span class="schedule-dot" style="background-color:#8D6E63;"></span> {sch_count}명</div>'
             if res_count > 0: content += f'<div><span class="schedule-dot" style="background-color:#FF6C6C;"></span> {res_count}건</div>'
 
-            # 버튼 생성 (클릭 가능한 달력 구현)
+            # 버튼 생성
             with cols[day_index]:
-                # 버튼 레이블에 HTML 마크다운 삽입 (디자인)
+                # Streamlit 버튼을 사용하여 클릭 이벤트를 명시적으로 처리
                 button_label = f"""
-                    <div style="color:{style_color};">
-                        <div class="cell-header">
+                    <div class="{cell_class}">
+                        <div class="cell-header" style="color:{style_color};">
                             <span style="font-size: 1.1em;">{day_num}</span>
                         </div>
                         <div style="font-size: 0.7em; margin-top: 5px;">{content}</div>
@@ -229,6 +239,7 @@ def render_monthly_calendar_stable(sched_df, res_df, key_prefix):
                 ):
                     st.session_state[f"{key_prefix}_selected_date"] = day_str
                     st.rerun()
+
 
 # --- [4. 페이지별 기능] ---
 
@@ -378,6 +389,9 @@ def page_schedule():
     st.header("📅 근무표")
     
     # 1. [상단] 날짜 선택기 (가장 안정적인 선택 방식)
+    sched_df = load("schedule")
+    if "id" not in sched_df.columns: sched_df["id"] = range(1, len(sched_df) + 1); save("schedule", sched_df)
+
     sel_date_obj = datetime.strptime(st.session_state.selected_date, "%Y-%m-%d").date()
     
     # st.date_input을 달력처럼 사용
@@ -392,9 +406,6 @@ def page_schedule():
         st.session_state.selected_date = new_sel_date_obj.strftime("%Y-%m-%d")
         st.rerun()
 
-    sched_df = load("schedule")
-    if "id" not in sched_df.columns: sched_df["id"] = range(1, len(sched_df) + 1); save("schedule", sched_df)
-    
     sel_date = st.session_state.selected_date
     st.subheader(f"📌 {sel_date} 근무")
 
@@ -463,6 +474,13 @@ def page_reservation():
     st.header("📅 예약 현황")
     
     # 1. [상단] 날짜 선택기
+    res_df = load("reservations")
+    res_logs = load("reservation_logs")
+    res_menu = load("reservation_menu")
+    menu_list = res_menu["item_name"].tolist()
+
+    if "id" not in res_df.columns: res_df["id"] = range(1, len(res_df) + 1); save("reservations", res_df)
+    
     sel_date_obj = datetime.strptime(st.session_state.res_selected_date, "%Y-%m-%d").date()
 
     new_sel_date_obj = st.date_input(
@@ -474,13 +492,6 @@ def page_reservation():
     if new_sel_date_obj != sel_date_obj:
         st.session_state.res_selected_date = new_sel_date_obj.strftime("%Y-%m-%d")
         st.rerun()
-
-    res_df = load("reservations")
-    res_logs = load("reservation_logs")
-    res_menu = load("reservation_menu")
-    menu_list = res_menu["item_name"].tolist()
-
-    if "id" not in res_df.columns: res_df["id"] = range(1, len(res_df) + 1); save("reservations", res_df)
 
     sel_date = st.session_state.res_selected_date
     st.subheader(f"🍰 {sel_date} 예약")
