@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed" 
 )
 
-# --- [1. 디자인 & CSS (달력 디자인 대폭 수정)] ---
+# --- [1. 디자인 & CSS] ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
@@ -39,9 +39,11 @@ st.markdown("""
         visibility: hidden; display: none;
     }
 
-    /* [모바일 최적화] */
+    /* 모바일 최적화 */
     @media (max-width: 768px) {
+        /* 사이드바 너비 축소 */
         section[data-testid="stSidebar"] { width: 150px !important; }
+        [data-testid="stSidebarCollapseButton"] { display: block !important; color: #4E342E !important; }
         .block-container { padding-bottom: 400px !important; padding-left: 10px !important; padding-right: 10px !important;}
         
         /* 달력 글씨 크게 */
@@ -116,13 +118,13 @@ def init_db():
     if not os.path.exists(FILES["checklist_log"]):
         pd.DataFrame(columns=["date", "type", "item", "user", "time"]).to_csv(FILES["checklist_log"], index=False)
     if not os.path.exists(FILES["schedule"]):
-        pd.DataFrame(columns=["id", "date", "user", "start_time", "end_time", "role"]).to_csv(FILES["schedule"], index=False)
+        pd.DataFrame(columns=["id", "date", "user", "start_time", "end_time", "role"]).to.csv(FILES["schedule"], index=False)
     if not os.path.exists(FILES["reservation_menu"]):
         pd.DataFrame({"item_name": ["홀케이크", "소금빵 세트"]}).to_csv(FILES["reservation_menu"], index=False)
     if not os.path.exists(FILES["reservations"]):
         pd.DataFrame(columns=["id", "date", "time", "item", "count", "customer_name", "customer_phone", "created_by", "created_at"]).to_csv(FILES["reservations"], index=False)
     if not os.path.exists(FILES["reservation_logs"]):
-        pd.DataFrame(columns=["res_id", "modifier", "modified_at", "details"]).to_csv(FILES["reservation_logs"], index=False)
+        pd.DataFrame(columns=["res_id", "modifier", "modified_at", "details"]).to.csv(FILES["reservation_logs"], index=False)
 
 init_db()
 
@@ -285,6 +287,7 @@ def page_schedule():
         sched_df["id"] = range(1, len(sched_df) + 1)
         save("schedule", sched_df)
 
+    # 1. [상단] 선택된 날짜 표시 및 근무자 목록
     sel_date = st.session_state.selected_date
     st.subheader(f"📌 {sel_date} 근무")
 
@@ -361,13 +364,15 @@ def page_schedule():
         "dateClick": True,
     }
     
-    cal = calendar(events=events, options=cal_options, callbacks=['dateClick'], key="sch_cal_v3") 
+    # [★핵심 수정] 캘린더 생성 및 클릭 처리
+    cal_key = f"sch_cal_{sel_date}"
+    cal = calendar(events=events, options=cal_options, callbacks=['dateClick'], key=cal_key) 
     
     if cal.get("dateClick"):
         clicked = cal["dateClick"]["date"].split("T")[0]
         if st.session_state.selected_date != clicked:
             st.session_state.selected_date = clicked
-            st.rerun()
+            st.rerun() # 클릭 즉시 새로고침
 
 def page_reservation():
     st.header("📅 예약 현황")
@@ -395,7 +400,7 @@ def page_reservation():
                 r_item = c1.selectbox("메뉴", menu_list)
                 r_count = c2.number_input("개수", min_value=1, value=1)
                 c3, c4 = st.columns(2)
-                r_time = c3.time_input("시간", datetime.strptime("12:00", "%H:%M"))
+                r_time = st.time_input("시간", datetime.strptime("12:00", "%H:%M"))
                 r_name = c4.text_input("고객명")
                 r_phone = st.text_input("전화번호")
 
@@ -450,6 +455,7 @@ def page_reservation():
         for idx, row in res_df.iterrows():
             events.append({"title": f"{row['time']} {row['customer_name']}", "start": row['date'], "end": row['date'], "backgroundColor": "#D7CCC8", "borderColor": "#8D6E63", "allDay": True, "textColor": "#3E2723"})
 
+    # [디자인 적용] 선택된 날짜 강조 이벤트 추가
     if sel_date:
         events.append({"title": "", "start": sel_date, "end": sel_date, "display": "background", "backgroundColor": "#DCEDC8"})
 
@@ -461,7 +467,7 @@ def page_reservation():
         "dateClick": True,
     }
 
-    cal = calendar(events=events, options=cal_options, callbacks=['dateClick'], key="res_cal_v2")
+    cal = calendar(events=events, options=cal_options, callbacks=['dateClick'], key="res_cal_v3")
     
     if cal.get("dateClick"):
         clicked = cal["dateClick"]["date"].split("T")[0]
