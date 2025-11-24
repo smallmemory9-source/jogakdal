@@ -3,7 +3,7 @@ import pandas as pd
 import os
 import math
 import base64
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from streamlit_option_menu import option_menu
 try:
     from streamlit_cookies_manager import CookieManager
@@ -41,7 +41,6 @@ st.markdown("""
     /* 모바일 최적화 */
     @media (max-width: 768px) {
         section[data-testid="stSidebar"] { width: 150px !important; }
-        [data-testid="stSidebarCollapseButton"] { display: block !important; color: #4E342E !important; }
         .block-container { padding-bottom: 400px !important; padding-left: 10px !important; padding-right: 10px !important;}
         h1 { font-size: 1.5rem !important; }
         h2 { font-size: 1.2rem !important; }
@@ -53,6 +52,7 @@ st.markdown("""
         padding: 0.6rem; font-weight: bold; width: 100%;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
+    .stButton>button:hover { background-color: #6D4C41; color: #FFF8E1; }
 
     /* 입력창 스타일 */
     .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input, .stDateInput>div>div>input, .stTimeInput>div>div>input {
@@ -66,6 +66,35 @@ st.markdown("""
         display: flex; flex-direction: column; justify-content: center; align-items: center; margin-bottom: 20px;
     }
     .logo-container img { width: 120px; height: auto; margin-bottom: 10px; }
+    
+    /* 월간 스케줄 시각화 스타일 */
+    .schedule-day-container {
+        border: 1px solid #BCAAA4;
+        border-radius: 8px;
+        padding: 5px;
+        margin-bottom: 5px;
+        background-color: #FFFFFF;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        cursor: pointer;
+    }
+    .schedule-day-container:hover {
+        background-color: #EFEBE9;
+    }
+    .schedule-day-today {
+        background-color: #FFF8E1 !important;
+        border-color: #FFB74D !important;
+    }
+    .schedule-day-selected {
+        background-color: #DCEDC8 !important; /* 연두색 */
+        border-color: #8D6E63 !important;
+    }
+    .schedule-dot {
+        height: 8px;
+        width: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 4px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -113,6 +142,89 @@ init_db()
 # 쿠키 매니저
 cookies = CookieManager()
 if not cookies.ready(): st.stop()
+
+
+# --- [날짜 시각화 함수] ---
+def render_monthly_calendar(sched_df, res_df, key_prefix):
+    today = date.today().strftime("%Y-%m-%d")
+    
+    # 현재 선택된 날짜 (입력창과 연동됨)
+    selected_date_str = st.session_state[f"{key_prefix}_selected_date"]
+
+    # 현재 날짜의 연도와 월을 추출
+    current_date_obj = datetime.strptime(selected_date_str, "%Y-%m-%d")
+    
+    st.subheader(f"🗓️ {current_date_obj.year}년 {current_date_obj.month}월")
+    
+    # 달력 생성을 위한 날짜 계산
+    first_day_of_month = current_date_obj.replace(day=1)
+    # 월요일을 0으로 기준 (Streamlit의 date_input과 일치)
+    start_day_of_week = first_day_of_month.weekday() 
+    
+    # 달력 시작 날짜 (이전 달의 마지막 주 일요일)
+    start_date = first_day_of_month - timedelta(days=start_day_of_week) 
+    
+    # 6주를 기준으로 달력 구성
+    weeks = 6 
+    
+    # 데이터 전처리 (일별 근무자/예약 수 계산)
+    schedule_counts = sched_df.groupby('date').size().to_dict()
+    reservation_counts = res_df.groupby('date').size().to_dict()
+    
+    # 요일 헤더
+    weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+    cols = st.columns(7)
+    for i, day in enumerate(weekdays):
+        cols[i].markdown(f"<div style='text-align:center; font-weight:bold; color:{'red' if day=='일' else ('blue' if day=='토' else '#4E342E')}'>{day}</div>", unsafe_allow_html=True)
+
+    # 날짜 채우기
+    for week in range(weeks):
+        cols = st.columns(7)
+        for day_index in range(7):
+            current_day = start_date + timedelta(days=week * 7 + day_index)
+            day_str = current_day.strftime("%Y-%m-%d")
+            day_num = current_day.day
+            
+            # 스타일 설정
+            is_current_month = current_day.month == current_date_obj.month
+            is_today = day_str == today
+            is_selected = day_str == selected_date_str
+            
+            class_list = ["schedule-day-container"]
+            if is_today:
+                class_list.append("schedule-day-today")
+            if is_selected:
+                class_list.append("schedule-day-selected")
+                
+            style_color = 'red' if day_index == 6 else ('blue' if day_index == 5 else '#4E342E')
+            if not is_current_month:
+                style_color = '#BCAAA4' # 이전/다음 달은 흐리게
+
+            # 데이터 표시 (점 또는 숫자)
+            sch_count = schedule_counts.get(day_str, 0)
+            res_count = reservation_counts.get(day_str, 0)
+            
+            content = ""
+            if sch_count > 0:
+                content += f'<span class="schedule-dot" style="background-color:#8D6E63;"></span> {sch_count}명 '
+            if res_count > 0:
+                content += f'<span class="schedule-dot" style="background-color:#FF6C6C;"></span> {res_count}건 '
+
+            # 클릭 가능하게 HTML 버튼 대신 마크다운을 사용하고, 콜백 함수로 처리
+            cols[day_index].markdown(
+                f"""
+                <div class="{' '.join(class_list)}" style="color:{style_color}; padding-bottom: 20px;" 
+                     onclick="window.parent.postMessage({{eventType: 'streamlit:date_click', date: '{day_str}'}}, '*')">
+                    <span style="font-size: 1.1em; font-weight: {'bold' if is_selected else 'normal'}">{day_num}</span>
+                    <div style="font-size: 0.7em; margin-top: 5px;">{content}</div>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+            
+    # [주의] 이 시각화는 클릭 기능을 위해 Streamlit 기본 date_input과 별도로 동작하며, 
+    # 실제 클릭 이벤트 처리는 JavaScript를 통해 Streamlit 세션 상태를 변경해야 하지만, 
+    # Streamlit Cloud 환경의 제약으로 인해 st.date_input을 사용하는 것이 가장 안정적입니다.
 
 # --- [3. 페이지별 기능] ---
 
@@ -266,10 +378,9 @@ def page_schedule():
     sched_df = load("schedule")
     if "id" not in sched_df.columns: sched_df["id"] = range(1, len(sched_df) + 1); save("schedule", sched_df)
     
-    # 1. [상단] 날짜 선택기 (클릭 달력 대체)
+    # 1. [상단] 날짜 선택기 (가장 안정적인 선택 방식)
     sel_date_obj = datetime.strptime(st.session_state.selected_date, "%Y-%m-%d").date()
     
-    # st.date_input을 달력처럼 사용
     new_sel_date_obj = st.date_input(
         "날짜 선택", 
         value=sel_date_obj,
@@ -288,7 +399,6 @@ def page_schedule():
         with st.expander(f"➕ {sel_date} 근무 추가", expanded=True):
             with st.form("add_sch"):
                 users = load("users")
-                # [안정화] 날짜 입력창은 고정된 날짜 선택기를 참조
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"sch_d_{sel_date}")
                 s_user = st.selectbox("직원", users["name"].unique())
                 times = [f"{h:02d}:00" for h in range(6, 24)]
@@ -340,18 +450,12 @@ def page_schedule():
         st.info("근무 내역이 없습니다.")
 
     st.divider()
-    st.subheader("월간 근무표 (참조용)")
+    st.subheader("월간 근무 현황 (시각화)")
     
-    # st.date_input을 다시 호출하여 달력 영역 제공
-    st.date_input(
-        "날짜 이동", 
-        value=sel_date_obj,
-        key="sch_date_picker_bottom"
-    )
-    st.caption("위의 '날짜 선택'을 이용하시면 됩니다.")
+    # 2. [하단] 월간 시각화 테이블 (갤럭시 달력 형태 대체)
+    render_monthly_calendar(sched_df, pd.DataFrame(columns=['date']), "sch")
 
 
-# --- [예약 현황 페이지 (안정화)] ---
 def page_reservation():
     st.header("📅 예약 현황")
     if "res_selected_date" not in st.session_state: st.session_state.res_selected_date = datetime.now().strftime("%Y-%m-%d")
@@ -367,7 +471,6 @@ def page_reservation():
     # 1. [상단] 날짜 선택기
     sel_date_obj = datetime.strptime(st.session_state.res_selected_date, "%Y-%m-%d").date()
 
-    # st.date_input을 달력처럼 사용
     new_sel_date_obj = st.date_input(
         "날짜 선택", 
         value=sel_date_obj,
@@ -442,16 +545,108 @@ def page_reservation():
         st.info("예약 내역이 없습니다.")
 
     st.divider()
-    st.subheader("월간 예약 현황 (참조용)")
+    st.subheader("월간 예약 현황 (시각화)")
     
-    # st.date_input을 다시 호출하여 달력 영역 제공
-    st.date_input(
-        "날짜 이동", 
-        value=sel_date_obj,
-        key="res_date_picker_bottom"
-    )
-    st.caption("위의 '날짜 선택'을 이용하시면 됩니다.")
+    # 2. [하단] 월간 시각화 테이블
+    render_monthly_calendar(pd.DataFrame(columns=['date']), res_df, "res")
 
+
+# --- [월간 달력 대체 시각화 함수] ---
+def render_monthly_calendar(sched_df, res_df, key_prefix):
+    today = date.today().strftime("%Y-%m-%d")
+    
+    # 현재 선택된 날짜 (입력창과 연동됨)
+    selected_date_str = st.session_state[f"{key_prefix}_selected_date"]
+    
+    # 월 변경을 위한 Selectbox (현재 선택된 날짜 기준으로 월 표시)
+    current_date_obj = datetime.strptime(selected_date_str, "%Y-%m-%d")
+    
+    # 월 이동 기능 추가 (Selectbox)
+    months_list = [(current_date_obj.replace(day=1) + timedelta(days=30*i)).strftime("%Y년 %m월") for i in range(-3, 4)]
+    
+    col_sel, col_empty = st.columns([3, 7])
+    with col_sel:
+        selected_month_str = st.selectbox("월 이동", months_list, index=3)
+        
+    # 선택된 월 객체
+    selected_month_obj = datetime.strptime(selected_month_str, "%Y년 %m월")
+    
+    # 만약 선택된 월이 현재 세션 날짜와 다르면, 세션 날짜를 해당 월 1일로 변경
+    if selected_month_obj.strftime("%Y-%m") != current_date_obj.strftime("%Y-%m"):
+        st.session_state[f"{key_prefix}_selected_date"] = selected_month_obj.strftime("%Y-%m-01")
+        st.experimental_rerun()
+
+
+    # 달력 생성을 위한 날짜 계산
+    first_day_of_month = selected_month_obj.replace(day=1)
+    start_day_of_week = first_day_of_month.weekday() 
+    
+    # 달력 시작 날짜 (이전 달의 마지막 주 일요일)
+    start_date = first_day_of_month - timedelta(days=start_day_of_week) 
+    
+    weeks = 6 
+    
+    # 데이터 전처리 (일별 근무자/예약 수 계산)
+    schedule_counts = sched_df.groupby('date').size().to_dict()
+    reservation_counts = res_df.groupby('date').size().to_dict()
+    
+    # 요일 헤더
+    st.markdown("---")
+    weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+    cols = st.columns(7)
+    for i, day in enumerate(weekdays):
+        cols[i].markdown(f"<div style='text-align:center; font-weight:bold; color:{'red' if day=='일' else ('blue' if day=='토' else '#4E342E')}'>{day}</div>", unsafe_allow_html=True)
+
+    # 날짜 채우기
+    for week in range(weeks):
+        cols = st.columns(7)
+        for day_index in range(7):
+            current_day = start_date + timedelta(days=week * 7 + day_index)
+            day_str = current_day.strftime("%Y-%m-%d")
+            day_num = current_day.day
+            
+            # 스타일 설정
+            is_current_month = current_day.month == selected_month_obj.month
+            is_today = day_str == today
+            is_selected = day_str == selected_date_str
+            
+            class_list = ["schedule-day-container"]
+            if is_today:
+                class_list.append("schedule-day-today")
+            if is_selected:
+                class_list.append("schedule-day-selected")
+                
+            style_color = 'red' if day_index == 6 else ('blue' if day_index == 5 else '#4E342E')
+            if not is_current_month:
+                style_color = '#BCAAA4' # 이전/다음 달은 흐리게
+
+            # 데이터 표시 (점 또는 숫자)
+            sch_count = schedule_counts.get(day_str, 0)
+            res_count = reservation_counts.get(day_str, 0)
+            
+            content = ""
+            if sch_count > 0:
+                content += f'<span class="schedule-dot" style="background-color:#8D6E63;"></span> {sch_count}명 '
+            if res_count > 0:
+                content += f'<span class="schedule-dot" style="background-color:#FF6C6C;"></span> {res_count}건 '
+            
+            # [★핵심] 날짜 클릭 시 상단 날짜 선택기를 업데이트하는 버튼/클릭 로직
+            # 이 로직은 직접적인 클릭 이벤트를 Streamlit에 전달해야 하지만, 
+            # 안정성을 위해 st.date_input을 사용하는 것으로 대체했습니다. 
+            
+            # 사용자에게 클릭을 유도하기 위한 마크다운
+            cols[day_index].markdown(
+                f"""
+                <div class="{' '.join(class_list)}" style="color:{style_color}; padding-bottom: 20px;">
+                    <span style="font-size: 1.1em; font-weight: {'bold' if is_selected else 'normal'}">{day_num}</span>
+                    <div style="font-size: 0.7em; margin-top: 5px;">{content}</div>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
+
+
+# --- [4. 관리자 및 메인 앱 실행] ---
 
 def page_admin():
     st.header("⚙️ 관리자 설정")
@@ -481,7 +676,6 @@ def page_admin():
         edited_menu = st.data_editor(res_menu, num_rows="dynamic", use_container_width=True)
         if st.button("메뉴 저장"): save("reservation_menu", edited_menu); st.success("저장됨")
 
-# --- [6. 메인 앱 실행] ---
 def main_app():
     with st.sidebar:
         if os.path.exists("logo.png"): st.image("logo.png", width=100)
