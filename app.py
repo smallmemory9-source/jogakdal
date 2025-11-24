@@ -3,12 +3,12 @@ import pandas as pd
 import os
 import math
 import base64
-from datetime import datetime, date # datetime과 date 모듈 모두 사용
+from datetime import datetime, date
 from streamlit_option_menu import option_menu
 try:
     from streamlit_cookies_manager import CookieManager
 except ImportError:
-    st.error("필수 라이브러리 누락: requirements.txt를 확인해주세요.")
+    st.error("필수 라이브러리 누락: 'streamlit-cookies-manager'를 설치해주세요.")
     st.stop()
 
 # --- [0. 기본 설정] ---
@@ -40,12 +40,9 @@ st.markdown("""
 
     /* 모바일 최적화 */
     @media (max-width: 768px) {
-        /* 사이드바 너비 축소 */
         section[data-testid="stSidebar"] { width: 150px !important; }
         [data-testid="stSidebarCollapseButton"] { display: block !important; color: #4E342E !important; }
         .block-container { padding-bottom: 400px !important; padding-left: 10px !important; padding-right: 10px !important;}
-        
-        /* 기본 글씨 크기 조정 */
         h1 { font-size: 1.5rem !important; }
         h2 { font-size: 1.2rem !important; }
     }
@@ -56,7 +53,6 @@ st.markdown("""
         padding: 0.6rem; font-weight: bold; width: 100%;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
-    .stButton>button:hover { background-color: #6D4C41; color: #FFF8E1; }
 
     /* 입력창 스타일 */
     .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input, .stDateInput>div>div>input, .stTimeInput>div>div>input {
@@ -94,7 +90,6 @@ def get_img_as_base64(file):
 def load(key): return pd.read_csv(FILES[key])
 def save(key, df): df.to_csv(FILES[key], index=False)
 
-# 데이터 파일 초기화
 def init_db():
     if not os.path.exists(FILES["users"]):
         pd.DataFrame({"username": ["admin"], "password": ["1234"], "name": ["사장님"], "role": ["Manager"]}).to_csv(FILES["users"], index=False)
@@ -107,11 +102,11 @@ def init_db():
     if not os.path.exists(FILES["schedule"]):
         pd.DataFrame(columns=["id", "date", "user", "start_time", "end_time", "role"]).to_csv(FILES["schedule"], index=False)
     if not os.path.exists(FILES["reservation_menu"]):
-        pd.DataFrame({"item_name": ["홀케이크", "소금빵 세트"]}).to.csv(FILES["reservation_menu"], index=False)
+        pd.DataFrame({"item_name": ["홀케이크", "소금빵 세트"]}).to_csv(FILES["reservation_menu"], index=False)
     if not os.path.exists(FILES["reservations"]):
         pd.DataFrame(columns=["id", "date", "time", "item", "count", "customer_name", "customer_phone", "created_by", "created_at"]).to_csv(FILES["reservations"], index=False)
     if not os.path.exists(FILES["reservation_logs"]):
-        pd.DataFrame(columns=["res_id", "modifier", "modified_at", "details"]).to.csv(FILES["reservation_logs"], index=False)
+        pd.DataFrame(columns=["res_id", "modifier", "modified_at", "details"]).to_csv(FILES["reservation_logs"], index=False)
 
 init_db()
 
@@ -262,7 +257,7 @@ def page_checklist():
     with tab1: render_check("오픈")
     with tab2: render_check("마감")
 
-# --- [스케줄 페이지 (달력 안정화)] ---
+# --- [스케줄 페이지 (안정화)] ---
 def page_schedule():
     st.header("📅 근무표")
     if "selected_date" not in st.session_state: st.session_state.selected_date = datetime.now().strftime("%Y-%m-%d")
@@ -270,7 +265,7 @@ def page_schedule():
 
     sched_df = load("schedule")
     if "id" not in sched_df.columns: sched_df["id"] = range(1, len(sched_df) + 1); save("schedule", sched_df)
-
+    
     # 1. [상단] 날짜 선택기 (클릭 달력 대체)
     sel_date_obj = datetime.strptime(st.session_state.selected_date, "%Y-%m-%d").date()
     
@@ -347,22 +342,16 @@ def page_schedule():
     st.divider()
     st.subheader("월간 근무표 (참조용)")
     
-    # [새로운 달력] st.date_input을 활용한 안정적인 달력
-    
-    # 임시 달력 기능: 이 부분은 차후 재구현 필요 시 Streamlit Calendar 라이브러리를 사용하지 않고 
-    # HTML과 JS를 직접 주입하는 방식으로 개선해야 합니다.
-    # 현재는 안정적인 st.date_input으로 대체되었습니다.
-    
     # st.date_input을 다시 호출하여 달력 영역 제공
     st.date_input(
         "날짜 이동", 
         value=sel_date_obj,
         key="sch_date_picker_bottom"
     )
-    st.caption("위 달력으로 날짜를 선택하면 상단 리스트가 자동으로 바뀝니다.")
+    st.caption("위의 '날짜 선택'을 이용하시면 됩니다.")
 
 
-# --- [예약 현황 페이지 (달력 안정화)] ---
+# --- [예약 현황 페이지 (안정화)] ---
 def page_reservation():
     st.header("📅 예약 현황")
     if "res_selected_date" not in st.session_state: st.session_state.res_selected_date = datetime.now().strftime("%Y-%m-%d")
@@ -403,7 +392,7 @@ def page_reservation():
                 r_item = c1.selectbox("메뉴", menu_list)
                 r_count = c2.number_input("개수", min_value=1, value=1)
                 c3, c4 = st.columns(2)
-                r_time = c3.time_input("시간", datetime.strptime("12:00", "%H:%M"))
+                r_time = st.time_input("시간", datetime.strptime("12:00", "%H:%M"))
                 r_name = c4.text_input("고객명")
                 r_phone = st.text_input("전화번호")
 
@@ -461,7 +450,7 @@ def page_reservation():
         value=sel_date_obj,
         key="res_date_picker_bottom"
     )
-    st.caption("위 달력으로 날짜를 선택하면 상단 리스트가 자동으로 바뀝니다.")
+    st.caption("위의 '날짜 선택'을 이용하시면 됩니다.")
 
 
 def page_admin():
