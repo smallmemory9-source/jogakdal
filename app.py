@@ -20,30 +20,21 @@ st.set_page_config(
     initial_sidebar_state="expanded" 
 )
 
-# --- [아이콘 설정을 위한 함수] ---
+# --- [1. 디자인 & CSS 설정] ---
 def get_img_as_base64(file):
     with open(file, "rb") as f:
         data = f.read()
     return base64.b64encode(data).decode()
 
-# 로고 파일이 있다면 base64 문자열로 변환 (없으면 빈 문자열)
+# 로고 파일 처리 (없을 경우 대비)
 logo_b64 = ""
 if os.path.exists("logo.png"):
     logo_b64 = get_img_as_base64("logo.png")
 
-# --- [1. 디자인 & CSS & 메타 태그 설정] ---
-# [★핵심 추가] 아이폰/안드로이드 홈 화면 아이콘 설정
+# [수정됨] 안전한 방식의 메타 태그 삽입 (아이콘 설정)
+# f-string 안에서 중괄호 {} 사용 시 이중 중괄호 {{}} 로 감싸야 에러가 안 남
 st.markdown(
     f"""
-    <head>
-        <!-- 모바일 홈 화면 이름 설정 -->
-        <meta name="apple-mobile-web-app-title" content="조각달과자점">
-        <meta name="application-name" content="조각달과자점">
-        
-        <!-- 아이콘 설정 (로고 파일 사용) -->
-        <link rel="apple-touch-icon" href="data:image/png;base64,{logo_b64}">
-        <link rel="icon" type="image/png" href="data:image/png;base64,{logo_b64}">
-    </head>
     <style>
     /* 폰트 설정 */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
@@ -57,12 +48,17 @@ st.markdown(
         background-color: #FFF3E0;
     }}
 
-    /* 상단 헤더 투명처리 및 햄버거 버튼 숨김 */
+    /* 상단 헤더 스타일 */
     header {{
+        visibility: visible !important;
         background-color: transparent !important;
     }}
     [data-testid="stHeader"] {{
-        display: none !important; 
+        background: transparent !important;
+    }}
+    /* 햄버거 메뉴 아이콘 색상 */
+    button[kind="header"] {{
+        color: #4E342E !important;
     }}
 
     /* 불필요한 요소 숨기기 */
@@ -72,54 +68,29 @@ st.markdown(
     [data-testid="stDecoration"] {{display:none;}} 
     [data-testid="stStatusWidget"] {{visibility: hidden;}} 
 
-    /* 모바일 사이드바 초슬림 다이어트 */
+    /* [모바일 최적화] 사이드바 & 본문 */
     @media (max-width: 768px) {{
+        /* 사이드바 너비 고정 (120px) */
         section[data-testid="stSidebar"] {{
-            display: block !important;
             width: 120px !important; 
             min-width: 120px !important;
-            transform: none !important; 
-            visibility: visible !important;
-            z-index: 100 !important;
         }}
         
-        section[data-testid="stSidebar"] > div {{
-            padding-left: 0.5rem;
-            padding-right: 0.5rem;
-            padding-top: 1rem;
-        }}
-
-        [data-testid="stSidebarCollapseButton"] {{
-            display: none !important;
-        }}
-
+        /* 본문 여백 조정 */
         section[data-testid="stMain"] {{
-            margin-left: 120px !important; 
-            width: calc(100% - 120px) !important; 
-        }}
-
-        .nav-link {{
-            font-size: 12px !important; 
-            padding: 8px !important; 
-            margin: 2px !important;
-        }}
-        .bi {{
-            font-size: 14px !important; 
+            /* 사이드바가 expanded 상태일 때 본문 밀기 */
+            margin-left: 0 !important; 
         }}
         
-        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{
-            font-size: 0.8rem !important;
-        }}
-        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {{
-            font-size: 1rem !important;
-        }}
-
+        /* 하단 여백 (키보드 대응) */
         .block-container {{
-            padding-left: 0.5rem !important;
-            padding-right: 0.5rem !important;
-            padding-top: 1rem !important;
-            padding-bottom: 400px !important; 
-            max-width: none !important;
+            padding-bottom: 400px !important;
+        }}
+        
+        /* 사이드바 폰트 축소 */
+        .nav-link {{
+            font-size: 12px !important;
+            padding: 8px !important;
         }}
     }}
 
@@ -159,7 +130,7 @@ st.markdown(
         margin-bottom: 10px;
     }}
     
-    /* 로고 강제 중앙 정렬 */
+    /* 로고 강제 중앙 정렬 클래스 */
     .logo-container {{
         display: flex;
         flex-direction: column;
@@ -260,18 +231,17 @@ def login_page():
                 st.session_state.update({"logged_in": True, "username": saved_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
                 st.rerun()
 
-    # [수정됨] 로고 태그를 HTML로 직접 삽입해서 중앙 정렬 (CSS 클래스 활용)
-    logo_tag = ""
+    logo_html = ""
     if os.path.exists("logo.png"):
         img_b64 = get_img_as_base64("logo.png")
-        logo_tag = f'<img src="data:image/png;base64,{img_b64}">'
+        logo_html = f'<img src="data:image/png;base64,{img_b64}">'
     else:
-        logo_tag = "<h1>🥐</h1>"
+        logo_html = "<h1>🥐</h1>"
 
     st.markdown(
         f"""
         <div class="logo-container">
-            {logo_tag}
+            {logo_html}
             <h2 style='color: #4E342E; margin-top: 10px;'>조각달과자점</h2>
             <p style='color: #8D6E63; font-size: 0.9rem;'>따뜻한 마음을 굽는 업무 공간</p>
         </div>
@@ -696,7 +666,6 @@ def page_admin():
 # --- [6. 메인 앱 실행] ---
 def main_app():
     with st.sidebar:
-        # 로고 표시 (이미지 파일이 없으면 텍스트만)
         if os.path.exists("logo.png"):
             st.image("logo.png", width=100)
         st.write(f"안녕하세요, **{st.session_state['name']}**님!")
