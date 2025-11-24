@@ -67,39 +67,6 @@ st.markdown("""
         display: flex; flex-direction: column; justify-content: center; align-items: center; margin-bottom: 20px;
     }
     .logo-container img { width: 120px; height: auto; margin-bottom: 10px; }
-    
-    /* 월간 시각화 스타일 */
-    .month-view-cell {
-        border: 1px solid #BCAAA4;
-        border-radius: 8px;
-        padding: 5px;
-        margin: 2px;
-        min-height: 80px; /* 달력 셀 높이 확보 */
-        font-size: 0.8em;
-    }
-    .cell-header {
-        font-weight: bold;
-        color: #4E342E;
-        margin-bottom: 3px;
-        display: flex;
-        justify-content: space-between;
-    }
-    .schedule-dot {
-        height: 6px;
-        width: 6px;
-        border-radius: 50%;
-        display: inline-block;
-        margin-right: 3px;
-    }
-    .cell-today {
-        background-color: #FFF8E1;
-        border-color: #FFB74D;
-    }
-    .cell-selected {
-        background-color: #DCEDC8; /* 연두색 */
-        border-color: #8D6E63;
-        box-shadow: 0 0 5px rgba(141, 110, 99, 0.5);
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -140,7 +107,7 @@ def init_db():
     if not os.path.exists(FILES["reservations"]):
         pd.DataFrame(columns=["id", "date", "time", "item", "count", "customer_name", "customer_phone", "created_by", "created_at"]).to_csv(FILES["reservations"], index=False)
     if not os.path.exists(FILES["reservation_logs"]):
-        pd.DataFrame(columns=["res_id", "modifier", "modified_at", "details"]).to.csv(FILES["reservation_logs"], index=False)
+        pd.DataFrame(columns=["res_id", "modifier", "modified_at", "details"]).to_csv(FILES["reservation_logs"], index=False)
 
 init_db()
 
@@ -149,99 +116,7 @@ cookies = CookieManager()
 if not cookies.ready(): st.stop()
 
 
-# --- [월간 시각화 함수 (안정화된 달력 형태 대체)] ---
-def render_monthly_calendar_stable(sched_df, res_df, key_prefix):
-    today_str = date.today().strftime("%Y-%m-%d")
-    
-    # Session State에서 날짜를 안전하게 가져옴
-    selected_date_str = st.session_state[f"{key_prefix}_selected_date"]
-
-    current_date_obj = datetime.strptime(selected_date_str, "%Y-%m-%d")
-    
-    st.subheader(f"🗓️ {current_date_obj.year}년 {current_date_obj.month}월")
-    
-    # 1. [월 이동 기능]
-    months_list = [(current_date_obj.replace(day=1) + timedelta(days=30*i)).strftime("%Y년 %m월") for i in range(-3, 4)]
-    
-    col_sel, col_empty = st.columns([3, 7])
-    with col_sel:
-        # 이 Selectbox를 통해 월을 이동
-        selected_month_str = st.selectbox("월 이동", months_list, index=3, key=f"{key_prefix}_month_select")
-        
-    selected_month_obj = datetime.strptime(selected_month_str, "%Y년 %m월")
-    
-    # 선택된 월로 이동 (강제 업데이트)
-    if selected_month_obj.strftime("%Y-%m") != current_date_obj.strftime("%Y-%m"):
-        st.session_state[f"{key_prefix}_selected_date"] = selected_month_obj.strftime("%Y-%m-01")
-        st.rerun()
-
-
-    # 2. [달력 구조 계산]
-    first_day_of_month = selected_month_obj.replace(day=1)
-    start_day_of_week = first_day_of_month.weekday() 
-    start_date = first_day_of_month - timedelta(days=start_day_of_week) 
-    weeks = 6 
-    
-    # 데이터 전처리 (일별 근무자/예약 수 계산)
-    schedule_counts = sched_df.groupby('date').size().to_dict()
-    reservation_counts = res_df.groupby('date').size().to_dict()
-    
-    # 3. [요일 헤더]
-    st.markdown("---")
-    weekdays = ["월", "화", "수", "목", "금", "토", "일"]
-    cols = st.columns(7)
-    for i, day in enumerate(weekdays):
-        cols[i].markdown(f"<div style='text-align:center; font-weight:bold; color:{'red' if day=='일' else ('blue' if day=='토' else '#4E342E')}'>{day}</div>", unsafe_allow_html=True)
-
-    # 4. [날짜 채우기 (클릭 가능한 버튼 활용)]
-    for week in range(weeks):
-        cols = st.columns(7)
-        for day_index in range(7):
-            current_day = start_date + timedelta(days=week * 7 + day_index)
-            day_str = current_day.strftime("%Y-%m-%d")
-            day_num = current_day.day
-            
-            is_current_month = current_day.month == selected_month_obj.month
-            is_today = day_str == today_str
-            is_selected = day_str == selected_date_str
-            
-            # 셀 스타일
-            cell_class = "month-view-cell"
-            if is_today: cell_class += " cell-today"
-            if is_selected: cell_class += " cell-selected"
-            if not is_current_month: cell_class += " style='background-color: #F5E6D3; border-color: #EFEBE9;'"
-                
-            style_color = 'red' if day_index == 6 else ('blue' if day_index == 5 else '#4E342E')
-            if not is_current_month: style_color = '#BCAAA4' 
-
-            sch_count = schedule_counts.get(day_str, 0)
-            res_count = reservation_counts.get(day_str, 0)
-            
-            content = ""
-            if sch_count > 0: content += f'<div><span class="schedule-dot" style="background-color:#8D6E63;"></span> {sch_count}명</div>'
-            if res_count > 0: content += f'<div><span class="schedule-dot" style="background-color:#FF6C6C;"></span> {res_count}건</div>'
-
-            # 버튼 생성
-            with cols[day_index]:
-                # Streamlit 버튼을 사용하여 클릭 이벤트를 명시적으로 처리
-                button_label = f"""
-                    <div class="{cell_class}">
-                        <div class="cell-header" style="color:{style_color};">
-                            <span style="font-size: 1.1em;">{day_num}</span>
-                        </div>
-                        <div style="font-size: 0.7em; margin-top: 5px;">{content}</div>
-                    </div>
-                """
-                
-                # 버튼 클릭 시 세션 상태 변경 및 새로고침
-                if st.button(
-                    button_label, 
-                    key=f"{key_prefix}_cal_btn_{day_str}", 
-                    help=f"{day_str} 근무: {sch_count}명, 예약: {res_count}건",
-                    unsafe_allow_html=True
-                ):
-                    st.session_state[f"{key_prefix}_selected_date"] = day_str
-                    st.rerun()
+# --- [월간 시각화 함수 (제거됨)] ---
 
 
 # --- [3. 페이지별 기능] ---
@@ -391,10 +266,10 @@ def page_checklist():
 def page_schedule():
     st.header("📅 근무표")
     
-    # 1. [상단] 날짜 선택기 (가장 안정적인 선택 방식)
     sched_df = load("schedule")
     if "id" not in sched_df.columns: sched_df["id"] = range(1, len(sched_df) + 1); save("schedule", sched_df)
 
+    # 1. [상단] 날짜 선택기 (가장 안정적인 선택 방식)
     sel_date_obj = datetime.strptime(st.session_state.selected_date, "%Y-%m-%d").date()
     
     # st.date_input을 달력처럼 사용
@@ -470,7 +345,6 @@ def page_schedule():
     st.subheader("월간 근무 현황 (시각화)")
     
     # 2. [하단] 월간 시각화 테이블
-    # sched_df는 근무 데이터, res_df는 빈 데이터프레임 (예약 현황은 표시하지 않음)
     render_monthly_calendar_stable(sched_df, pd.DataFrame(columns=['date']), "sch")
 
 
