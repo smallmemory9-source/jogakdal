@@ -20,97 +20,111 @@ st.set_page_config(
     initial_sidebar_state="expanded" 
 )
 
-# --- [1. 디자인 & CSS 설정] ---
-st.markdown("""
+# --- [아이콘 설정을 위한 함수] ---
+def get_img_as_base64(file):
+    with open(file, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+# 로고 파일이 있다면 base64 문자열로 변환 (없으면 빈 문자열)
+logo_b64 = ""
+if os.path.exists("logo.png"):
+    logo_b64 = get_img_as_base64("logo.png")
+
+# --- [1. 디자인 & CSS & 메타 태그 설정] ---
+# [★핵심 추가] 아이폰/안드로이드 홈 화면 아이콘 설정
+st.markdown(
+    f"""
+    <head>
+        <!-- 모바일 홈 화면 이름 설정 -->
+        <meta name="apple-mobile-web-app-title" content="조각달과자점">
+        <meta name="application-name" content="조각달과자점">
+        
+        <!-- 아이콘 설정 (로고 파일 사용) -->
+        <link rel="apple-touch-icon" href="data:image/png;base64,{logo_b64}">
+        <link rel="icon" type="image/png" href="data:image/png;base64,{logo_b64}">
+    </head>
     <style>
     /* 폰트 설정 */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
-    html, body, [class*="css"]  {
+    html, body, [class*="css"]  {{
         font-family: 'Noto Sans KR', sans-serif;
         color: #4E342E;
-    }
+    }}
 
     /* 배경색 */
-    .stApp {
+    .stApp {{
         background-color: #FFF3E0;
-    }
+    }}
 
     /* 상단 헤더 투명처리 및 햄버거 버튼 숨김 */
-    header {
+    header {{
         background-color: transparent !important;
-    }
-    [data-testid="stHeader"] {
+    }}
+    [data-testid="stHeader"] {{
         display: none !important; 
-    }
+    }}
 
     /* 불필요한 요소 숨기기 */
-    #MainMenu {visibility: hidden;}
-    .stDeployButton {display:none;} 
-    footer {visibility: hidden;} 
-    [data-testid="stDecoration"] {display:none;} 
-    [data-testid="stStatusWidget"] {visibility: hidden;} 
+    #MainMenu {{visibility: hidden;}}
+    .stDeployButton {{display:none;}} 
+    footer {{visibility: hidden;}} 
+    [data-testid="stDecoration"] {{display:none;}} 
+    [data-testid="stStatusWidget"] {{visibility: hidden;}} 
 
-    /* [★핵심 수정] 모바일 사이드바 초슬림 다이어트 */
-    @media (max-width: 768px) {
-        /* 1. 사이드바 너비 대폭 축소 (120px) */
-        section[data-testid="stSidebar"] {
+    /* 모바일 사이드바 초슬림 다이어트 */
+    @media (max-width: 768px) {{
+        section[data-testid="stSidebar"] {{
             display: block !important;
             width: 120px !important; 
             min-width: 120px !important;
             transform: none !important; 
             visibility: visible !important;
             z-index: 100 !important;
-        }
+        }}
         
-        /* 사이드바 내부 여백 줄이기 */
-        section[data-testid="stSidebar"] > div {
+        section[data-testid="stSidebar"] > div {{
             padding-left: 0.5rem;
             padding-right: 0.5rem;
             padding-top: 1rem;
-        }
+        }}
 
-        /* 닫기 버튼 숨김 */
-        [data-testid="stSidebarCollapseButton"] {
+        [data-testid="stSidebarCollapseButton"] {{
             display: none !important;
-        }
+        }}
 
-        /* 2. 메인 본문 영역 여백 조정 */
-        section[data-testid="stMain"] {
-            margin-left: 120px !important; /* 사이드바 너비만큼만 밀기 */
+        section[data-testid="stMain"] {{
+            margin-left: 120px !important; 
             width: calc(100% - 120px) !important; 
-        }
+        }}
 
-        /* 3. 메뉴 폰트 사이즈 축소 */
-        .nav-link {
-            font-size: 12px !important; /* 글씨 작게 */
-            padding: 8px !important; /* 버튼 높이 줄이기 */
+        .nav-link {{
+            font-size: 12px !important; 
+            padding: 8px !important; 
             margin: 2px !important;
-        }
-        /* 아이콘 크기도 축소 */
-        .bi {
+        }}
+        .bi {{
             font-size: 14px !important; 
-        }
+        }}
         
-        /* 사이드바 안의 텍스트(안녕하세요 등) 크기 줄임 */
-        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
+        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {{
             font-size: 0.8rem !important;
-        }
-        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+        }}
+        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {{
             font-size: 1rem !important;
-        }
+        }}
 
-        /* 본문 하단 여백 (키보드 대응) */
-        .block-container {
+        .block-container {{
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
             padding-top: 1rem !important;
             padding-bottom: 400px !important; 
             max-width: none !important;
-        }
-    }
+        }}
+    }}
 
     /* 버튼 디자인 */
-    .stButton>button {
+    .stButton>button {{
         background-color: #8D6E63;
         color: white;
         border-radius: 15px;
@@ -120,45 +134,45 @@ st.markdown("""
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         transition: all 0.3s;
         width: 100%;
-    }
-    .stButton>button:hover {
+    }}
+    .stButton>button:hover {{
         background-color: #6D4C41;
         color: #FFF8E1;
         transform: translateY(-1px);
-    }
+    }}
 
     /* 입력창 스타일 */
-    .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input, .stDateInput>div>div>input, .stTimeInput>div>div>input {
+    .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input, .stDateInput>div>div>input, .stTimeInput>div>div>input {{
         border-radius: 10px;
         border: 1px solid #BCAAA4;
         background-color: #FFFFFF;
         height: 45px;
-    }
+    }}
 
     /* 컨테이너 스타일 */
-    [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
+    [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {{
         background-color: #FFFFFF;
         padding: 15px;
         border-radius: 15px;
         box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         border: 1px solid #EFEBE9;
         margin-bottom: 10px;
-    }
+    }}
     
     /* 로고 강제 중앙 정렬 */
-    .logo-container {
+    .logo-container {{
         display: flex;
         flex-direction: column;
         justify-content: center;
         align-items: center;
         text-align: center;
         margin-bottom: 20px;
-    }
-    .logo-container img {
+    }}
+    .logo-container img {{
         width: 120px; 
         height: auto;
         margin-bottom: 10px;
-    }
+    }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -177,11 +191,6 @@ FILES = {
 # --- [3. 유틸리티 함수] ---
 def is_admin():
     return st.session_state.get("role") in ["Manager", "관리자"]
-
-def get_img_as_base64(file):
-    with open(file, "rb") as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
 
 def init_db():
     if not os.path.exists(FILES["users"]):
@@ -251,17 +260,18 @@ def login_page():
                 st.session_state.update({"logged_in": True, "username": saved_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
                 st.rerun()
 
-    logo_html = ""
+    # [수정됨] 로고 태그를 HTML로 직접 삽입해서 중앙 정렬 (CSS 클래스 활용)
+    logo_tag = ""
     if os.path.exists("logo.png"):
         img_b64 = get_img_as_base64("logo.png")
-        logo_html = f'<img src="data:image/png;base64,{img_b64}">'
+        logo_tag = f'<img src="data:image/png;base64,{img_b64}">'
     else:
-        logo_html = "<h1>🥐</h1>"
+        logo_tag = "<h1>🥐</h1>"
 
     st.markdown(
         f"""
         <div class="logo-container">
-            {logo_html}
+            {logo_tag}
             <h2 style='color: #4E342E; margin-top: 10px;'>조각달과자점</h2>
             <p style='color: #8D6E63; font-size: 0.9rem;'>따뜻한 마음을 굽는 업무 공간</p>
         </div>
@@ -686,11 +696,12 @@ def page_admin():
 # --- [6. 메인 앱 실행] ---
 def main_app():
     with st.sidebar:
-        # 로고 삭제 요청 반영 (이미지 코드 제거)
+        # 로고 표시 (이미지 파일이 없으면 텍스트만)
+        if os.path.exists("logo.png"):
+            st.image("logo.png", width=100)
         st.write(f"안녕하세요, **{st.session_state['name']}**님!")
         st.caption(f"직책: {st.session_state['role']}")
         
-        # [수정됨] '레시피' 메뉴 삭제 & 글씨 크기 축소 적용
         menu = option_menu(
             menu_title=None,
             options=["공지사항", "스케줄", "예약 현황", "체크리스트", "매뉴얼", "관리자"],
