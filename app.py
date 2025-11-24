@@ -20,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed" 
 )
 
-# --- [1. 디자인 & CSS] ---
+# --- [1. 디자인 & CSS (달력 디자인 대폭 수정)] ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
@@ -30,23 +30,69 @@ st.markdown("""
     }
     .stApp { background-color: #FFF3E0; }
     
-    /* 상단 헤더 복구 (메뉴 버튼 보임) */
     header { visibility: visible !important; background-color: transparent !important; }
     [data-testid="stHeader"] button { color: #4E342E !important; }
-
-    /* 불필요 요소 숨김 */
     #MainMenu, .stDeployButton, footer, [data-testid="stDecoration"], [data-testid="stStatusWidget"] {
         visibility: hidden; display: none;
     }
 
-    /* 모바일 최적화 */
+    /* [모바일 최적화] */
     @media (max-width: 768px) {
         section[data-testid="stSidebar"] { width: 150px !important; }
-        [data-testid="stSidebarCollapseButton"] { display: block !important; color: #4E342E !important; }
-        .block-container { padding-bottom: 400px !important; } /* 키보드 여백 */
+        .block-container { padding-bottom: 400px !important; padding-left: 10px !important; padding-right: 10px !important;}
     }
 
-    /* 버튼 스타일 */
+    /* [달력 디자인 성형수술] */
+    /* 1. 달력 헤더 (년월 제목) */
+    .fc-toolbar-title {
+        font-size: 1.2rem !important;
+        color: #4E342E !important;
+        font-weight: 700 !important;
+    }
+    /* 2. 달력 버튼 (오늘, <, >) */
+    .fc-button {
+        background-color: #8D6E63 !important;
+        border: none !important;
+        border-radius: 10px !important;
+        font-size: 0.8rem !important;
+        padding: 5px 10px !important;
+        opacity: 1 !important;
+    }
+    .fc-button:hover { background-color: #6D4C41 !important; }
+    
+    /* 3. 요일 헤더 (일, 월, 화...) */
+    .fc-col-header-cell-cushion {
+        color: #5D4037 !important;
+        font-weight: bold !important;
+        font-size: 0.9rem !important;
+        padding-bottom: 5px !important;
+    }
+    
+    /* 4. 날짜 숫자 (1, 2, 3...) */
+    .fc-daygrid-day-number {
+        color: #3E2723 !important;
+        font-size: 1rem !important; /* 폰트 키움 */
+        font-weight: 500 !important;
+        padding: 8px !important;
+        text-decoration: none !important;
+    }
+    
+    /* 5. 오늘 날짜 강조 */
+    .fc-day-today {
+        background-color: #FFF8E1 !important; /* 연한 노랑 */
+    }
+    
+    /* 6. 이벤트 (스케줄 바) 디자인 */
+    .fc-event {
+        border: none !important;
+        border-radius: 5px !important;
+        box-shadow: 0 2px 3px rgba(0,0,0,0.1) !important;
+        font-size: 0.75rem !important;
+        padding: 2px 4px !important;
+        margin-bottom: 2px !important;
+    }
+    
+    /* 기본 버튼 디자인 */
     .stButton>button {
         background-color: #8D6E63; color: white; border-radius: 15px; border: none;
         padding: 0.6rem; font-weight: bold; width: 100%;
@@ -58,14 +104,10 @@ st.markdown("""
     .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input, .stDateInput>div>div>input, .stTimeInput>div>div>input {
         border-radius: 10px; border: 1px solid #BCAAA4; background-color: #FFFFFF; height: 45px;
     }
-
-    /* 카드(컨테이너) 스타일 */
     [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
         background-color: #FFFFFF; padding: 15px; border-radius: 15px;
         border: 1px solid #EFEBE9; margin-bottom: 10px;
     }
-    
-    /* 로고 중앙 정렬 */
     .logo-container {
         display: flex; flex-direction: column; justify-content: center; align-items: center; margin-bottom: 20px;
     }
@@ -94,7 +136,6 @@ def get_img_as_base64(file):
 def load(key): return pd.read_csv(FILES[key])
 def save(key, df): df.to_csv(FILES[key], index=False)
 
-# 데이터 파일 초기화
 def init_db():
     if not os.path.exists(FILES["users"]):
         pd.DataFrame({"username": ["admin"], "password": ["1234"], "name": ["사장님"], "role": ["Manager"]}).to_csv(FILES["users"], index=False)
@@ -115,7 +156,6 @@ def init_db():
 
 init_db()
 
-# 쿠키 매니저
 cookies = CookieManager()
 if not cookies.ready(): st.stop()
 
@@ -125,7 +165,6 @@ def login_page():
     st.markdown("<style>.stApp {background-color: #FFFFFF;}</style>", unsafe_allow_html=True)
     st.write("")
     
-    # 자동 로그인 체크
     if cookies.get("auto_login") == "true":
         saved_id, saved_pw = cookies.get("saved_id"), cookies.get("saved_pw")
         if saved_id and saved_pw:
@@ -135,7 +174,6 @@ def login_page():
                 st.session_state.update({"logged_in": True, "username": saved_id, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
                 st.rerun()
 
-    # 로고 표시
     logo_html = f'<img src="data:image/png;base64,{get_img_as_base64("logo.png")}">' if os.path.exists("logo.png") else "<h1>🥐</h1>"
     st.markdown(f"""<div class="logo-container">{logo_html}<h2 style='color: #4E342E; margin-top: 10px;'>조각달과자점</h2><p style='color: #8D6E63; font-size: 0.9rem;'>따뜻한 마음을 굽는 업무 공간</p></div>""", unsafe_allow_html=True)
 
@@ -266,7 +304,7 @@ def page_checklist():
 
 def page_schedule():
     st.header("📅 근무표")
-    # 세션 상태 초기화
+    # 세션 상태 초기화 및 유지
     if "selected_date" not in st.session_state:
         st.session_state.selected_date = datetime.now().strftime("%Y-%m-%d")
     if "edit_sch_id" not in st.session_state:
@@ -284,7 +322,7 @@ def page_schedule():
         with st.expander(f"➕ {sel_date} 근무 추가", expanded=True):
             with st.form("add_sch"):
                 users = load("users")
-                # [핵심] 입력창의 기본값을 '선택된 날짜'로 설정 & key에 날짜 포함하여 강제 갱신
+                # Key를 날짜와 연동하여 강제 업데이트
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"sch_d_{sel_date}")
                 s_user = st.selectbox("직원", users["name"].unique())
                 times = [f"{h:02d}:00" for h in range(6, 24)]
@@ -307,12 +345,10 @@ def page_schedule():
                         times = [f"{h:02d}:00" for h in range(6, 24)]
                         try: s_idx, e_idx = times.index(row['start_time']), times.index(row['end_time'])
                         except: s_idx, e_idx = 3, 12
-                        
                         c1, c2 = st.columns(2)
                         n_s = c1.selectbox("출근", times, index=s_idx)
                         n_e = c2.selectbox("퇴근", times, index=e_idx)
                         n_c = st.color_picker("색상", row['role'])
-                        
                         b1, b2 = st.columns(2)
                         if b1.form_submit_button("저장"):
                             sched_df.loc[sched_df["id"] == row['id'], ["start_time", "end_time", "role"]] = [n_s, n_e, n_c]
@@ -337,36 +373,27 @@ def page_schedule():
 
     st.divider()
     events = []
-    # 1. 실제 스케줄 이벤트
     if not sched_df.empty:
         for idx, row in sched_df.iterrows():
             events.append({"title": f"{row['start_time']} {row['user']}", "start": row['date'], "end": row['date'], "backgroundColor": row['role'], "borderColor": row['role'], "allDay": True})
     
-    # 2. [핵심 수정] 클릭된 날짜를 '연두색 배경'으로 표시하는 가짜 이벤트 추가
-    # 이렇게 하면 클릭된 날짜가 시각적으로 확실히 보입니다.
+    # [디자인 적용] 선택된 날짜 강조 이벤트 추가
     if sel_date:
-        events.append({
-            "title": "", # 제목 없음 (배경색만 표시)
-            "start": sel_date,
-            "end": sel_date,
-            "display": "background", # 배경 이벤트로 설정
-            "backgroundColor": "#DCEDC8" # 연두색
-        })
+        events.append({"title": "", "start": sel_date, "end": sel_date, "display": "background", "backgroundColor": "#DCEDC8"}) # 연두색 하이라이트
 
-    # [핵심 수정] 달력 옵션 설정
+    # [핵심] 달력 옵션 설정 (디자인 + 클릭)
     cal_options = {
         "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
         "initialView": "dayGridMonth",
-        "initialDate": sel_date, # 달력이 현재 선택된 날짜가 있는 달을 보여주도록 함
+        "initialDate": sel_date, # 선택된 날짜의 달을 보여줌
         "selectable": False,
         "dateClick": True,
     }
-
-    cal_output = calendar(events=events, options=cal_options, callbacks=['dateClick'], key="sch_cal")
     
-    # [핵심 수정] 클릭 감지 로직
-    if cal_output.get("dateClick"):
-        clicked = cal_output["dateClick"]["date"].split("T")[0]
+    cal = calendar(events=events, options=cal_options, callbacks=['dateClick'], key="sch_cal_v2") # 키 변경으로 리로드 유도
+    
+    if cal.get("dateClick"):
+        clicked = cal["dateClick"]["date"].split("T")[0]
         if st.session_state.selected_date != clicked:
             st.session_state.selected_date = clicked
             st.rerun()
@@ -392,7 +419,6 @@ def page_reservation():
                 st.error("등록된 메뉴가 없습니다.")
                 st.form_submit_button("불가")
             else:
-                # [핵심] key에 날짜 포함
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"res_d_{sel_date}")
                 c1, c2 = st.columns(2)
                 r_item = c1.selectbox("메뉴", menu_list)
@@ -453,22 +479,18 @@ def page_reservation():
         for idx, row in res_df.iterrows():
             events.append({"title": f"{row['time']} {row['customer_name']}", "start": row['date'], "end": row['date'], "backgroundColor": "#D7CCC8", "borderColor": "#8D6E63", "allDay": True, "textColor": "#3E2723"})
 
-    # [핵심 수정] 클릭된 날짜 표시 (연두색)
     if sel_date:
-        events.append({
-            "title": "", "start": sel_date, "end": sel_date,
-            "display": "background", "backgroundColor": "#DCEDC8"
-        })
+        events.append({"title": "", "start": sel_date, "end": sel_date, "display": "background", "backgroundColor": "#DCEDC8"})
 
     cal_options = {
         "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
         "initialView": "dayGridMonth",
-        "initialDate": sel_date, # 달력 시작 날짜를 선택된 날짜로 맞춤
+        "initialDate": sel_date,
         "selectable": False,
         "dateClick": True,
     }
 
-    cal = calendar(events=events, options=cal_options, callbacks=['dateClick'], key="res_cal")
+    cal = calendar(events=events, options=cal_options, callbacks=['dateClick'], key="res_cal_v2")
     
     if cal.get("dateClick"):
         clicked = cal["dateClick"]["date"].split("T")[0]
