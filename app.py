@@ -23,75 +23,34 @@ st.set_page_config(
 # --- [1. 디자인 & CSS 설정] ---
 st.markdown("""
     <style>
-    /* 폰트 설정 */
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
     html, body, [class*="css"]  {
         font-family: 'Noto Sans KR', sans-serif;
         color: #4E342E;
     }
-
-    /* 배경색 */
-    .stApp {
-        background-color: #FFF3E0;
-    }
-
-    /* 상단 헤더 투명처리 및 햄버거 버튼 숨김 */
-    header {
-        background-color: transparent !important;
-    }
-    [data-testid="stHeader"] {
-        display: none !important; 
-    }
-
-    /* 불필요한 요소 숨기기 */
+    .stApp { background-color: #FFF3E0; }
+    header { visibility: visible !important; background-color: transparent !important; }
+    [data-testid="stHeader"] button { color: #4E342E !important; }
     #MainMenu {visibility: hidden;}
     .stDeployButton {display:none;} 
     footer {visibility: hidden;} 
     [data-testid="stDecoration"] {display:none;} 
     [data-testid="stStatusWidget"] {visibility: hidden;} 
 
-    /* [모바일 사이드바 초슬림 다이어트] */
     @media (max-width: 768px) {
         section[data-testid="stSidebar"] {
             display: block !important;
-            width: 120px !important; 
-            min-width: 120px !important;
+            width: 170px !important; 
+            min-width: 170px !important;
             transform: none !important; 
             visibility: visible !important;
             z-index: 100 !important;
         }
-        
-        section[data-testid="stSidebar"] > div {
-            padding-left: 0.5rem;
-            padding-right: 0.5rem;
-            padding-top: 1rem;
-        }
-
-        [data-testid="stSidebarCollapseButton"] {
-            display: none !important;
-        }
-
+        [data-testid="stSidebarCollapseButton"] { display: none !important; }
         section[data-testid="stMain"] {
-            margin-left: 120px !important; 
-            width: calc(100% - 120px) !important; 
+            margin-left: 170px !important; 
+            width: calc(100% - 170px) !important; 
         }
-
-        .nav-link {
-            font-size: 12px !important; 
-            padding: 8px !important; 
-            margin: 2px !important;
-        }
-        .bi {
-            font-size: 14px !important; 
-        }
-        
-        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span {
-            font-size: 0.8rem !important;
-        }
-        [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
-            font-size: 1rem !important;
-        }
-
         .block-container {
             padding-left: 0.5rem !important;
             padding-right: 0.5rem !important;
@@ -99,9 +58,10 @@ st.markdown("""
             padding-bottom: 400px !important; 
             max-width: none !important;
         }
+        h1 { font-size: 1.5rem !important; }
+        h2 { font-size: 1.2rem !important; }
     }
 
-    /* 버튼 디자인 */
     .stButton>button {
         background-color: #8D6E63;
         color: white;
@@ -110,24 +70,14 @@ st.markdown("""
         padding: 0.6rem 1rem;
         font-weight: bold;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        transition: all 0.3s;
         width: 100%;
     }
-    .stButton>button:hover {
-        background-color: #6D4C41;
-        color: #FFF8E1;
-        transform: translateY(-1px);
-    }
-
-    /* 입력창 스타일 */
     .stTextInput>div>div>input, .stSelectbox>div>div>div, .stNumberInput>div>div>input, .stDateInput>div>div>input, .stTimeInput>div>div>input {
         border-radius: 10px;
         border: 1px solid #BCAAA4;
         background-color: #FFFFFF;
         height: 45px;
     }
-
-    /* 컨테이너 스타일 */
     [data-testid="stVerticalBlock"] > [style*="flex-direction: column;"] > [data-testid="stVerticalBlock"] {
         background-color: #FFFFFF;
         padding: 15px;
@@ -136,8 +86,6 @@ st.markdown("""
         border: 1px solid #EFEBE9;
         margin-bottom: 10px;
     }
-    
-    /* 로고 강제 중앙 정렬 */
     .logo-container {
         display: flex;
         flex-direction: column;
@@ -146,11 +94,7 @@ st.markdown("""
         text-align: center;
         margin-bottom: 20px;
     }
-    .logo-container img {
-        width: 120px; 
-        height: auto;
-        margin-bottom: 10px;
-    }
+    .logo-container img { width: 120px; height: auto; margin-bottom: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -177,37 +121,19 @@ def get_img_as_base64(file):
 
 def init_db():
     if not os.path.exists(FILES["users"]):
-        df = pd.DataFrame({
-            "username": ["admin", "staff1"],
-            "password": ["1234", "1111"],
-            "name": ["사장님", "김직원"],
-            "role": ["Manager", "Staff"]
-        })
-        df.to_csv(FILES["users"], index=False)
-
+        pd.DataFrame({"username": ["admin"], "password": ["1234"], "name": ["사장님"], "role": ["Manager"]}).to_csv(FILES["users"], index=False)
     if not os.path.exists(FILES["posts"]):
         pd.DataFrame(columns=["id", "category", "sub_category", "title", "content", "author", "date"]).to_csv(FILES["posts"], index=False)
-
     if not os.path.exists(FILES["checklist_def"]):
-        df = pd.DataFrame({
-            "type": ["오픈", "오픈", "마감", "마감"],
-            "item": ["매장 환기", "포스기 켜기", "재고 조사", "전기 차단 확인"]
-        })
-        df.to_csv(FILES["checklist_def"], index=False)
-
+        pd.DataFrame({"type": ["오픈", "마감"], "item": ["매장 환기", "포스기 켜기"]}).to_csv(FILES["checklist_def"], index=False)
     if not os.path.exists(FILES["checklist_log"]):
         pd.DataFrame(columns=["date", "type", "item", "user", "time"]).to_csv(FILES["checklist_log"], index=False)
-        
     if not os.path.exists(FILES["schedule"]):
         pd.DataFrame(columns=["id", "date", "user", "start_time", "end_time", "role"]).to_csv(FILES["schedule"], index=False)
-
     if not os.path.exists(FILES["reservation_menu"]):
-        df = pd.DataFrame({"item_name": ["홀케이크", "소금빵 세트", "단체 주문"]})
-        df.to_csv(FILES["reservation_menu"], index=False)
-
+        pd.DataFrame({"item_name": ["홀케이크", "소금빵 세트"]}).to_csv(FILES["reservation_menu"], index=False)
     if not os.path.exists(FILES["reservations"]):
         pd.DataFrame(columns=["id", "date", "time", "item", "count", "customer_name", "customer_phone", "created_by", "created_at"]).to_csv(FILES["reservations"], index=False)
-    
     if not os.path.exists(FILES["reservation_logs"]):
         pd.DataFrame(columns=["res_id", "modifier", "modified_at", "details"]).to_csv(FILES["reservation_logs"], index=False)
 
@@ -222,7 +148,6 @@ def save(key, df): df.to_csv(FILES[key], index=False)
 
 init_db()
 
-# [쿠키 매니저 초기화]
 cookies = CookieManager()
 if not cookies.ready():
     st.stop()
@@ -269,9 +194,7 @@ def login_page():
                 user_id = st.text_input("아이디")
                 user_pw = st.text_input("비밀번호", type="password")
                 auto_login = st.checkbox("자동 로그인")
-                
                 submit = st.form_submit_button("입장하기")
-                
                 if submit:
                     users = load("users")
                     user = users[(users["username"] == user_id) & (users["password"] == user_pw)]
@@ -298,11 +221,11 @@ def login_page():
                 if submit:
                     users = load("users")
                     if new_id in users["username"].values:
-                        st.warning("이미 존재하는 아이디입니다.")
+                        st.warning("이미 존재하는 아이디.")
                     else:
                         new_row = pd.DataFrame([{"username": new_id, "password": new_pw, "name": new_name, "role": "Staff"}])
                         save("users", pd.concat([users, new_row], ignore_index=True))
-                        st.success("가입되었습니다! 로그인해주세요.")
+                        st.success("가입완료! 로그인해주세요.")
 
 def page_board(category_name, emoji):
     st.header(f"{emoji} {category_name}")
@@ -422,17 +345,7 @@ def page_schedule():
         sched_df["id"] = range(1, len(sched_df) + 1)
         save("schedule", sched_df)
 
-    events = []
-    if not sched_df.empty:
-        for idx, row in sched_df.iterrows():
-            color = row['role'] if str(row['role']).startswith("#") else "#8D6E63"
-            events.append({
-                "title": f"{row['start_time']} {row['user']}",
-                "start": f"{row['date']}", "end": f"{row['date']}",
-                "backgroundColor": color, "borderColor": color, "allDay": True
-            })
-
-    # [순서 변경] 1. 상단: 선택된 날짜의 내용 표시
+    # 1. [상단] 선택된 날짜 표시 및 근무자 목록/추가
     sel_date = st.session_state.selected_date
     st.subheader(f"📌 {sel_date} 근무")
 
@@ -440,7 +353,8 @@ def page_schedule():
         with st.expander(f"➕ {sel_date} 근무 추가", expanded=True):
             with st.form("add_sch"):
                 users = load("users")
-                c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"sch_dt_{sel_date}")
+                # [핵심] key에 날짜를 포함시켜 날짜 변경 시 입력창도 즉시 업데이트
+                c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"sch_d_{sel_date}")
                 s_user = st.selectbox("직원", users["name"].unique())
                 times = [f"{h:02d}:00" for h in range(6, 24)]
                 c1, c2 = st.columns(2)
@@ -504,9 +418,20 @@ def page_schedule():
     else:
         st.info("근무 내역이 없습니다.")
 
-    # [순서 변경] 2. 하단: 달력 표시
+    # 2. [하단] 달력 표시 (가장 마지막에 배치)
     st.divider()
-    cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": True, "dateClick": True}, callbacks=['dateClick'], key="sch_cal")
+    events = []
+    if not sched_df.empty:
+        for idx, row in sched_df.iterrows():
+            color = row['role'] if str(row['role']).startswith("#") else "#8D6E63"
+            events.append({
+                "title": f"{row['start_time']} {row['user']}",
+                "start": f"{row['date']}", "end": f"{row['date']}",
+                "backgroundColor": color, "borderColor": color, "allDay": True
+            })
+            
+    # [수정] selectable=False로 설정하여 클릭 충돌 방지
+    cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": False, "dateClick": True}, callbacks=['dateClick'], key="sch_cal")
     
     if cal_output.get("dateClick"):
         clicked = cal_output["dateClick"]["date"]
@@ -528,16 +453,7 @@ def page_reservation():
         res_df["id"] = range(1, len(res_df) + 1)
         save("reservations", res_df)
 
-    events = []
-    if not res_df.empty:
-        for idx, row in res_df.iterrows():
-            events.append({
-                "title": f"{row['time']} {row['customer_name']} ({row['item']})",
-                "start": f"{row['date']}", "end": f"{row['date']}",
-                "backgroundColor": "#D7CCC8", "borderColor": "#8D6E63", "allDay": True, "textColor": "#3E2723"
-            })
-
-    # [순서 변경] 1. 상단: 선택된 날짜의 내용 표시
+    # 1. [상단] 선택된 날짜 예약 리스트
     sel_date = st.session_state.res_selected_date
     st.subheader(f"🍰 {sel_date} 예약")
 
@@ -547,7 +463,8 @@ def page_reservation():
                 st.error("등록된 메뉴가 없습니다.")
                 st.form_submit_button("불가")
             else:
-                c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"res_dt_{sel_date}")
+                # [핵심] key에 날짜 포함 -> 날짜 변경 시 입력창 초기화
+                c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"res_d_{sel_date}")
                 c1, c2 = st.columns(2)
                 r_item = c1.selectbox("메뉴", menu_list)
                 r_count = c2.number_input("개수", min_value=1, value=1)
@@ -627,9 +544,19 @@ def page_reservation():
     else:
         st.info("예약 내역이 없습니다.")
 
-    # [순서 변경] 2. 하단: 달력 표시
+    # 2. [하단] 달력 표시 (가장 마지막에 배치)
     st.divider()
-    cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": True, "dateClick": True}, callbacks=['dateClick'], key="res_cal")
+    events = []
+    if not res_df.empty:
+        for idx, row in res_df.iterrows():
+            events.append({
+                "title": f"{row['time']} {row['customer_name']} ({row['item']})",
+                "start": f"{row['date']}", "end": f"{row['date']}",
+                "backgroundColor": "#D7CCC8", "borderColor": "#8D6E63", "allDay": True, "textColor": "#3E2723"
+            })
+
+    # [수정] selectable=False로 설정하여 클릭 충돌 방지
+    cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": False, "dateClick": True}, callbacks=['dateClick'], key="res_cal")
     
     if cal_output.get("dateClick"):
         clicked = cal_output["dateClick"]["date"]
