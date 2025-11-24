@@ -126,7 +126,7 @@ def init_db():
     if not os.path.exists(FILES["posts"]):
         pd.DataFrame(columns=["id", "category", "sub_category", "title", "content", "author", "date"]).to_csv(FILES["posts"], index=False)
     if not os.path.exists(FILES["checklist_def"]):
-        pd.DataFrame({"type": ["오픈", "마감"], "item": ["매장 환기", "포스기 켜기"]}).to.csv(FILES["checklist_def"], index=False)
+        pd.DataFrame({"type": ["오픈", "마감"], "item": ["매장 환기", "포스기 켜기"]}).to_csv(FILES["checklist_def"], index=False)
     if not os.path.exists(FILES["checklist_log"]):
         pd.DataFrame(columns=["date", "type", "item", "user", "time"]).to_csv(FILES["checklist_log"], index=False)
     if not os.path.exists(FILES["schedule"]):
@@ -178,7 +178,7 @@ def render_monthly_calendar(sched_df, res_df, key_prefix):
     first_day_of_month = selected_month_obj.replace(day=1)
     start_day_of_week = first_day_of_month.weekday() 
     
-    # 달력 시작 날짜 (이전 달의 마지막 주 일요일)
+    # 달력 시작 날짜 (월요일 기준이므로 일요일로 맞추기 위해 1일의 요일 -1)
     start_date = first_day_of_month - timedelta(days=start_day_of_week) 
     
     weeks = 6 
@@ -230,25 +230,24 @@ def render_monthly_calendar(sched_df, res_df, key_prefix):
             # [★핵심] 날짜 클릭 시 상단 날짜 선택기를 업데이트하는 버튼/클릭 로직
             # st.button을 사용하여 클릭 이벤트를 명시적으로 처리
             with cols[day_index]:
-                 # Streamlit 버튼을 사용하여 HTML 템플릿의 클릭 기능을 대체
+                # Streamlit 버튼을 사용하여 HTML 템플릿의 클릭 기능을 대체
+                # HTML 마크다운을 버튼 안에 넣어 디자인 적용
+                button_label = f"""
+                    <div style="text-align:center; color:{style_color};">
+                        <span style="font-size: 1.1em; font-weight: {'bold' if is_selected else 'normal'}">{day_num}</span>
+                        <div style="font-size: 0.7em; margin-top: 5px;">{content}</div>
+                    </div>
+                """
+                
+                # 버튼 클릭 시 세션 상태 변경 및 새로고침
                 if st.button(
-                    f"{day_num}", 
+                    button_label, 
                     key=f"{key_prefix}_cal_btn_{day_str}", 
-                    help=f"{day_str} 근무: {sch_count}명, 예약: {res_count}건"
+                    help=f"{day_str} 근무: {sch_count}명, 예약: {res_count}건",
+                    unsafe_allow_html=True
                 ):
-                    # 클릭 시 세션 상태 변경 및 새로고침
                     st.session_state[f"{key_prefix}_selected_date"] = day_str
                     st.rerun()
-
-                # 데이터 표시
-                st.markdown(
-                    f"""
-                    <div style="font-size: 0.7em; margin-top: -15px; color:{style_color};">
-                        {content}
-                    </div>
-                    """, 
-                    unsafe_allow_html=True
-                )
 
 
 # --- [3. 페이지별 기능] ---
@@ -397,12 +396,6 @@ def page_checklist():
 # --- [스케줄 페이지 (안정화)] ---
 def page_schedule():
     st.header("📅 근무표")
-    # [오류 해결] 초기화 보장
-    if "selected_date" not in st.session_state: st.session_state.selected_date = datetime.now().strftime("%Y-%m-%d")
-    if "edit_sch_id" not in st.session_state: st.session_state.edit_sch_id = None
-
-    sched_df = load("schedule")
-    if "id" not in sched_df.columns: sched_df["id"] = range(1, len(sched_df) + 1); save("schedule", sched_df)
     
     # 1. [상단] 날짜 선택기 (가장 안정적인 선택 방식)
     sel_date_obj = datetime.strptime(st.session_state.selected_date, "%Y-%m-%d").date()
@@ -418,6 +411,9 @@ def page_schedule():
         st.session_state.selected_date = new_sel_date_obj.strftime("%Y-%m-%d")
         st.rerun()
 
+    sched_df = load("schedule")
+    if "id" not in sched_df.columns: sched_df["id"] = range(1, len(sched_df) + 1); save("schedule", sched_df)
+    
     sel_date = st.session_state.selected_date
     st.subheader(f"📌 {sel_date} 근무")
 
@@ -478,7 +474,7 @@ def page_schedule():
     st.divider()
     st.subheader("월간 근무 현황 (시각화)")
     
-    # 2. [하단] 월간 시각화 테이블 (갤럭시 달력 형태 대체)
+    # 2. [하단] 월간 시각화 테이블
     render_monthly_calendar(sched_df, pd.DataFrame(columns=['date']), "sch")
 
 
@@ -578,6 +574,7 @@ def page_reservation():
     render_monthly_calendar(pd.DataFrame(columns=['date']), res_df, "res")
 
 
+# --- [관리자 및 메인 앱 실행] ---
 def page_admin():
     st.header("⚙️ 관리자 설정")
     if "admin_unlocked" not in st.session_state: st.session_state.admin_unlocked = False
@@ -607,6 +604,13 @@ def page_admin():
         if st.button("메뉴 저장"): save("reservation_menu", edited_menu); st.success("저장됨")
 
 def main_app():
+    # [오류 해결] 모든 세션 상태 초기화 보장
+    if "selected_date" not in st.session_state: st.session_state.selected_date = datetime.now().strftime("%Y-%m-%d")
+    if "res_selected_date" not in st.session_state: st.session_state.res_selected_date = datetime.now().strftime("%Y-%m-%d")
+    if "edit_sch_id" not in st.session_state: st.session_state.edit_sch_id = None
+    if "edit_res_id" not in st.session_state: st.session_state.edit_res_id = None
+    if "admin_unlocked" not in st.session_state: st.session_state.admin_unlocked = False
+    
     with st.sidebar:
         if os.path.exists("logo.png"): st.image("logo.png", width=100)
         st.write(f"안녕하세요, **{st.session_state['name']}**님!")
