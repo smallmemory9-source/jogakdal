@@ -17,7 +17,6 @@ st.set_page_config(
     page_title="조각달과자점", 
     page_icon="🥐", 
     layout="wide", 
-    # [요청사항] 처음 접속 시 사이드바 숨김 상태로 시작
     initial_sidebar_state="collapsed" 
 )
 
@@ -40,14 +39,12 @@ st.markdown("""
         color: #4E342E !important; 
     }
 
-    /* 숨김 처리 */
     #MainMenu {visibility: hidden;}
     .stDeployButton {display:none;} 
     footer {visibility: hidden;} 
     [data-testid="stDecoration"] {display:none;} 
     [data-testid="stStatusWidget"] {visibility: hidden;} 
 
-    /* 모바일 최적화 */
     @media (max-width: 768px) {
         section[data-testid="stSidebar"] {
             width: 150px !important; 
@@ -60,15 +57,12 @@ st.markdown("""
             padding-bottom: 400px !important; 
             max-width: none !important;
         }
-        
-        /* 사이드바 폰트 축소 */
         .nav-link {
             font-size: 12px !important;
             padding: 8px !important;
         }
     }
 
-    /* 버튼 디자인 */
     .stButton>button {
         background-color: #8D6E63;
         color: white;
@@ -303,7 +297,7 @@ def page_board(category_name, emoji):
             st.divider()
             cols = st.columns(total_pages + 2)
             for i in range(1, total_pages + 1):
-                if cols[i].button(str(i), key=f"pg_{category_name}_{i}", disabled=(i==current_page)):
+                if cols[i].button(str(i), key=f"btn_page_{category_name}_{i}", disabled=(i==current_page)):
                     st.session_state[page_key] = i
                     st.rerun()
     else:
@@ -352,7 +346,6 @@ def page_schedule():
         sched_df["id"] = range(1, len(sched_df) + 1)
         save("schedule", sched_df)
 
-    # 1. [상단] 선택된 날짜 표시 및 근무자 목록
     sel_date = st.session_state.selected_date
     st.subheader(f"📌 {sel_date} 근무")
 
@@ -360,7 +353,7 @@ def page_schedule():
         with st.expander(f"➕ {sel_date} 근무 추가", expanded=True):
             with st.form("add_sch"):
                 users = load("users")
-                # [핵심] key에 날짜 포함 -> 날짜 변경 시 입력창 업데이트
+                # [핵심 수정] key에 날짜를 포함하여 날짜 변경 시 입력창 초기화 강제
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"sch_d_{sel_date}")
                 s_user = st.selectbox("직원", users["name"].unique())
                 times = [f"{h:02d}:00" for h in range(6, 24)]
@@ -425,7 +418,6 @@ def page_schedule():
     else:
         st.info("근무 내역이 없습니다.")
 
-    # 2. [하단] 달력 표시 (selectable=False)
     st.divider()
     events = []
     if not sched_df.empty:
@@ -437,25 +429,17 @@ def page_schedule():
                 "backgroundColor": color, "borderColor": color, "allDay": True
             })
 
-    # [★핵심 수정] 달력 옵션 및 콜백 처리
-    calendar_options = {
-        "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
-        "initialView": "dayGridMonth",
-        "selectable": False, # 드래그 선택 방지
-        "dateClick": True,   # 날짜 클릭 활성화
-    }
+    # [핵심 수정] 달력 클릭 이벤트가 무조건 발생하도록 설정
+    cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": False, "dateClick": True}, callbacks=['dateClick'], key="sch_cal")
     
-    cal_output = calendar(events=events, options=calendar_options, callbacks=['dateClick'], key="sch_cal")
-    
-    # [★핵심 수정] 클릭된 날짜가 있으면 즉시 반영
     if cal_output.get("dateClick"):
-        clicked_date = cal_output["dateClick"]["date"]
-        # 시간 정보(T00:00:00)가 붙어있다면 제거
-        if "T" in clicked_date:
-            clicked_date = clicked_date.split("T")[0]
+        clicked = cal_output["dateClick"]["date"]
+        # 클릭된 날짜가 시간(T00:00:00)을 포함할 경우 제거
+        if "T" in clicked:
+            clicked = clicked.split("T")[0]
             
-        if st.session_state.selected_date != clicked_date:
-            st.session_state.selected_date = clicked_date
+        if st.session_state.selected_date != clicked:
+            st.session_state.selected_date = clicked
             st.rerun()
 
 def page_reservation():
@@ -472,7 +456,6 @@ def page_reservation():
         res_df["id"] = range(1, len(res_df) + 1)
         save("reservations", res_df)
 
-    # 1. [상단] 선택된 날짜 예약 리스트
     sel_date = st.session_state.res_selected_date
     st.subheader(f"🍰 {sel_date} 예약")
 
@@ -482,7 +465,7 @@ def page_reservation():
                 st.error("등록된 메뉴가 없습니다.")
                 st.form_submit_button("불가")
             else:
-                # [핵심] key에 날짜 포함
+                # [핵심 수정] key에 날짜 포함 -> 날짜 변경 시 입력창 초기화
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"res_d_{sel_date}")
                 c1, c2 = st.columns(2)
                 r_item = c1.selectbox("메뉴", menu_list)
@@ -563,7 +546,6 @@ def page_reservation():
     else:
         st.info("예약 내역이 없습니다.")
 
-    # 2. [하단] 달력 표시
     st.divider()
     events = []
     if not res_df.empty:
@@ -574,24 +556,16 @@ def page_reservation():
                 "backgroundColor": "#D7CCC8", "borderColor": "#8D6E63", "allDay": True, "textColor": "#3E2723"
             })
 
-    # [★핵심 수정] 달력 설정 및 클릭 처리
-    calendar_options = {
-        "headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"},
-        "initialView": "dayGridMonth",
-        "selectable": False,
-        "dateClick": True,
-    }
-    
-    cal_output = calendar(events=events, options=calendar_options, callbacks=['dateClick'], key="res_cal")
+    # [핵심 수정] 달력 클릭 이벤트가 무조건 발생하도록 설정 (key값 변경 포함)
+    cal_output = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": False, "dateClick": True}, callbacks=['dateClick'], key="res_cal_v2")
     
     if cal_output.get("dateClick"):
-        clicked_date = cal_output["dateClick"]["date"]
-        # 시간 정보 제거 (T00:00:00)
-        if "T" in clicked_date:
-            clicked_date = clicked_date.split("T")[0]
+        clicked = cal_output["dateClick"]["date"]
+        if "T" in clicked:
+            clicked = clicked.split("T")[0]
             
-        if st.session_state.res_selected_date != clicked_date:
-            st.session_state.res_selected_date = clicked_date
+        if st.session_state.res_selected_date != clicked:
+            st.session_state.res_selected_date = clicked
             st.rerun()
 
 def page_admin():
