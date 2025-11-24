@@ -266,11 +266,16 @@ def page_checklist():
 
 def page_schedule():
     st.header("📅 근무표")
-    if "selected_date" not in st.session_state: st.session_state.selected_date = datetime.now().strftime("%Y-%m-%d")
-    if "edit_sch_id" not in st.session_state: st.session_state.edit_sch_id = None
+    # 세션 상태 초기화
+    if "selected_date" not in st.session_state:
+        st.session_state.selected_date = datetime.now().strftime("%Y-%m-%d")
+    if "edit_sch_id" not in st.session_state:
+        st.session_state.edit_sch_id = None
 
     sched_df = load("schedule")
-    if "id" not in sched_df.columns: sched_df["id"] = range(1, len(sched_df) + 1); save("schedule", sched_df)
+    if "id" not in sched_df.columns:
+        sched_df["id"] = range(1, len(sched_df) + 1)
+        save("schedule", sched_df)
 
     sel_date = st.session_state.selected_date
     st.subheader(f"📌 {sel_date} 근무")
@@ -278,7 +283,7 @@ def page_schedule():
     if is_admin():
         with st.expander(f"➕ {sel_date} 근무 추가", expanded=True):
             with st.form("add_sch"):
-                # [핵심 수정] key에 날짜 포함 -> 날짜 변경 시 입력창 강제 초기화
+                # [핵심 수정] key에 날짜 포함 -> 날짜 변경 시 입력창 초기화 강제
                 c_date = st.date_input("날짜", datetime.strptime(sel_date, "%Y-%m-%d"), key=f"sch_d_{sel_date}")
                 s_user = st.selectbox("직원", load("users")["name"].unique())
                 times = [f"{h:02d}:00" for h in range(6, 24)]
@@ -335,11 +340,11 @@ def page_schedule():
         for idx, row in sched_df.iterrows():
             events.append({"title": f"{row['start_time']} {row['user']}", "start": row['date'], "end": row['date'], "backgroundColor": row['role'], "borderColor": row['role'], "allDay": True})
 
-    # [★수정] 날짜 클릭 시 즉시 반영되도록 설정
+    # [★수정] 달력 클릭 이벤트
     cal = calendar(events=events, options={"headerToolbar": {"left": "prev,next today", "center": "title", "right": "dayGridMonth"}, "selectable": False, "dateClick": True}, callbacks=['dateClick'], key="sch_cal")
     
     if cal.get("dateClick"):
-        clicked = cal["dateClick"]["date"].split("T")[0] # 시간 정보 제거
+        clicked = cal["dateClick"]["date"].split("T")[0]
         if st.session_state.selected_date != clicked:
             st.session_state.selected_date = clicked
             st.rerun()
