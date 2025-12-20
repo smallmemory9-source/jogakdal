@@ -5,7 +5,7 @@ import time
 from datetime import datetime, date
 from streamlit_option_menu import option_menu
 from streamlit_gsheets import GSheetsConnection
-from streamlit_cookies_manager import CookieManager # 쿠키 매니저 추가
+from streamlit_cookies_manager import CookieManager
 
 # --- [0. 기본 설정] ---
 st.set_page_config(
@@ -49,10 +49,14 @@ st.markdown("""
     
     /* 댓글 및 박스 스타일 */
     .comment-box { background-color: #F5F5F5; padding: 10px; border-radius: 8px; margin-top: 5px; font-size: 0.9rem; }
-    .warning-banner {
-        background-color: #FFEBEE; border: 1px solid #FFCDD2; color: #C62828; 
-        padding: 15px; border-radius: 10px; margin-bottom: 20px; font-weight: bold; text-align: center;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    
+    /* 알림 스타일 (Expander 헤더를 붉게 강조) */
+    .streamlit-expanderHeader {
+        background-color: #FFEBEE !important;
+        color: #C62828 !important;
+        border: 1px solid #FFCDD2;
+        border-radius: 10px;
+        font-weight: bold;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -76,7 +80,6 @@ SHEET_NAMES = {
 @st.cache_data(ttl=60)
 def load_data(key):
     try:
-        # 캐시 갱신을 위해 ttl=0 옵션 사용 (읽을 때 최신본 가져오기)
         return conn.read(worksheet=SHEET_NAMES[key], ttl=0)
     except Exception:
         return pd.DataFrame()
@@ -129,7 +132,8 @@ def is_task_due(start_date_str, cycle_type, interval_val):
         return False
     except: return False
 
-def get_pending_routines():
+# [변경] 이름만 주는게 아니라 '업무 정보 전체'를 반환하도록 수정
+def get_pending_tasks_list():
     defs = load("routine_def")
     logs = load("routine_log")
     if defs.empty: return []
@@ -139,11 +143,14 @@ def get_pending_routines():
     
     for _, task in defs.iterrows():
         if is_task_due(task.get("start_date"), task.get("cycle_type"), task.get("interval_val", 1)):
+            is_done = False
             if not logs.empty:
                 done = logs[(logs["task_id"].astype(str) == str(task["id"])) & (logs["done_date"] == today_str)]
-                if done.empty: pending_tasks.append(task["task_name"])
-            else:
-                pending_tasks.append(task["task_name"])
+                if not done.empty: is_done = True
+            
+            if not is_done:
+                pending_tasks.append(task)
+                
     return pending_tasks
 
 # --- [4. 페이지 구성] ---
@@ -151,7 +158,6 @@ def get_pending_routines():
 def login_page():
     st.markdown("<br><h1 style='text-align:center;'>🥐 조각달 업무수첩</h1>", unsafe_allow_html=True)
     
-    # [자동 로그인 로직]
     if cookies.get("auto_login") == "true":
         saved_id = cookies.get("uid")
         saved_pw_hash = cookies.get("upw")
@@ -172,7 +178,7 @@ def login_page():
         with st.form("login"):
             uid = st.text_input("아이디")
             upw = st.text_input("비밀번호", type="password")
-            auto_login = st.checkbox("자동 로그인") # 체크박스 추가
+            auto_login = st.checkbox("자동 로그인")
             
             if st.form_submit_button("입장"):
                 users = load("users")
@@ -182,22 +188,17 @@ def login_page():
                     users["password"] = users["password"].astype(str)
                     user = users[(users["username"] == uid) & (users["password"] == hashed_pw)]
                     if not user.empty:
-                        # 세션 설정
                         st.session_state.update({"logged_in": True, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
                         st.session_state["show_login_alert"] = True
-                        
-                        # 자동 로그인 쿠키 저장
                         if auto_login:
                             cookies["auto_login"] = "true"
                             cookies["uid"] = uid
-                            cookies["upw"] = hashed_pw # 해시된 비번 저장
+                            cookies["upw"] = hashed_pw
                             cookies.save()
                         else:
-                            # 체크 해제 시 기존 쿠키 삭제
                             if cookies.get("auto_login"):
                                 cookies["auto_login"] = "false"
                                 cookies.save()
-                        
                         st.rerun()
                     else: st.error("아이디 또는 비밀번호 오류")
                 else: st.error("사용자 DB 오류")
@@ -249,21 +250,13 @@ def page_board(board_name, icon):
                 st.info("게시글이 없습니다.")
             else:
                 my_posts = my_posts.sort_values("id", ascending=False)
-                
-                # [수정된 부분] Expander를 사용하여 제목만 노출
                 for _, row in my_posts.iterrows():
-                    # 제목 줄에 작성자와 날짜도 작게 표시
-                    label = f"{row['title']}  Epochs"
-                    label = f"📄 {row['title']}  Example" 
-                    # 깔끔한 라벨 생성 (제목 + 작성자 + 날짜)
                     expander_label = f"{row['title']}   (✍️ {row['author']} | 📅 {row['date']})"
                     
                     with st.expander(expander_label):
                         st.markdown(f"**내용:**")
                         st.write(row['content'])
-                        
                         st.markdown("---")
-                        # 댓글 로직
                         if not comments.empty:
                             post_comments = comments[comments["post_id"].astype(str) == str(row["id"])]
                             for _, c in post_comments.iterrows():
@@ -322,38 +315,20 @@ def page_routine():
                             st.rerun()
         st.divider()
         
-        due_tasks = []
-        if not defs.empty:
-            for _, task in defs.iterrows():
-                if is_task_due(task.get("start_date"), task.get("cycle_type"), task.get("interval_val", 1)):
-                    due_tasks.append(task)
+        pending_tasks = get_pending_tasks_list()
         
-        if not due_tasks:
+        if not pending_tasks:
             st.info("오늘 예정된 업무가 없습니다.")
         else:
-            pending_cnt = 0
-            for task in due_tasks:
-                is_done = False
-                if not logs.empty:
-                    done = logs[(logs["task_id"].astype(str) == str(task["id"])) & (logs["done_date"] == today_str)]
-                    if not done.empty: is_done = True
-                if not is_done: pending_cnt += 1
-                
+            for task in pending_tasks:
                 with st.container():
-                    bg = "#E8F5E9" if is_done else "#FFEBEE"
-                    bd = "#C8E6C9" if is_done else "#FFCDD2"
-                    st.markdown(f"""<div style="padding:15px; border-radius:10px; border:1px solid {bd}; background-color:{bg}; margin-bottom:10px;"><h4 style="margin:0;">{task['task_name']}</h4></div>""", unsafe_allow_html=True)
+                    st.markdown(f"""<div style="padding:15px; border-radius:10px; border:1px solid #FFCDD2; background-color:#FFEBEE; margin-bottom:10px;"><h4 style="margin:0;">{task['task_name']}</h4></div>""", unsafe_allow_html=True)
                     c1, c2 = st.columns([1,4])
-                    if is_done: 
-                        worker = logs[(logs["task_id"].astype(str) == str(task["id"])) & (logs["done_date"] == today_str)].iloc[0]['worker']
-                        st.success(f"✅ {worker} 완료")
-                    else:
-                        if st.button("완료하기", key=f"do_{task['id']}"):
-                            new_log = pd.DataFrame([{"task_id": task["id"], "done_date": today_str, "worker": st.session_state["name"], "created_at": datetime.now().strftime("%H:%M")}])
-                            if logs.empty: save("routine_log", new_log)
-                            else: save("routine_log", pd.concat([logs, new_log], ignore_index=True))
-                            st.rerun()
-            if pending_cnt == 0: st.balloons(); st.success("🎉 업무 끝!")
+                    if st.button("완료하기", key=f"do_main_{task['id']}"):
+                        new_log = pd.DataFrame([{"task_id": task["id"], "done_date": today_str, "worker": st.session_state["name"], "created_at": datetime.now().strftime("%H:%M")}])
+                        if logs.empty: save("routine_log", new_log)
+                        else: save("routine_log", pd.concat([logs, new_log], ignore_index=True))
+                        st.rerun()
 
     with tab_log:
         if logs.empty: st.info("기록 없음")
@@ -382,16 +357,40 @@ def main():
             
             if menu == "로그아웃":
                 st.session_state.logged_in = False
-                cookies["auto_login"] = "false" # 로그아웃 시 자동로그인 해제
+                cookies["auto_login"] = "false"
                 cookies.save()
                 st.rerun()
 
-        pending = get_pending_routines()
+        # [여기가 핵심 변경 사항]
+        # 상단에 미완료 업무가 있을 때만 '클릭 가능한 붉은 배너(Expander)' 표시
+        pending = get_pending_tasks_list()
+        
+        # 1. 로그인 직후 토스트 알림
         if st.session_state.get("show_login_alert", False):
             if pending: st.toast(f"할 일 {len(pending)}건!", icon="🚨"); time.sleep(1)
             st.session_state["show_login_alert"] = False
+
+        # 2. 클릭 가능한 배너 (Expander 활용)
         if pending:
-            st.markdown(f"""<div class="warning-banner">🚨 미완료 {len(pending)}건!</div>""", unsafe_allow_html=True)
+            label = f"🚨 [긴급] 오늘 미완료 업무가 {len(pending)}건 있습니다! (눌러서 바로 처리하기)"
+            with st.expander(label, expanded=False):
+                st.markdown("아래 버튼을 누르면 즉시 완료 처리됩니다.")
+                for task in pending:
+                    col1, col2 = st.columns([4, 1])
+                    col1.markdown(f"**• {task['task_name']}**")
+                    # 버튼 누르면 바로 저장하고 리로드
+                    if col2.button("완료", key=f"banner_btn_{task['id']}"):
+                        today_str = date.today().strftime("%Y-%m-%d")
+                        new_log = pd.DataFrame([{
+                            "task_id": task["id"], 
+                            "done_date": today_str, 
+                            "worker": st.session_state["name"], 
+                            "created_at": datetime.now().strftime("%H:%M")
+                        }])
+                        logs = load("routine_log")
+                        if logs.empty: save("routine_log", new_log)
+                        else: save("routine_log", pd.concat([logs, new_log], ignore_index=True))
+                        st.rerun()
 
         if menu == "🏠 본점 공지": page_board("본점", "🏠")
         elif menu == "🏭 작업장 공지": page_board("작업장", "🏭")
