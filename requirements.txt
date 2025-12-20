@@ -2,3 +2,4 @@ streamlit
 pandas
 streamlit-option-menu
 st-gsheets-connection
+streamlit-cookies-manager
