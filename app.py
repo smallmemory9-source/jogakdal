@@ -21,11 +21,27 @@ st.markdown("""
     html, body, [class*="css"]  { font-family: 'Noto Sans KR', sans-serif; color: #4E342E; }
     .stApp { background-color: #FFF3E0; }
     
-    /* 헤더 설정 */
-    header { visibility: visible !important; background: transparent !important; }
-    [data-testid="stDecoration"] { display: none; }
-    [data-testid="stStatusWidget"] { display: none; }
-    [data-testid="stToolbar"] { display: none; }
+    /* 1. 헤더 영역 살리기 (투명 배경) */
+    header { 
+        visibility: visible !important; 
+        background-color: transparent !important; 
+    }
+    
+    /* 2. 불필요한 장식(무지개 줄, 로딩 아이콘) 숨기기 */
+    [data-testid="stDecoration"] { display: none !important; }
+    [data-testid="stStatusWidget"] { display: none !important; }
+    
+    /* 3. [중요] 사이드바 여는 화살표 버튼(>) 강제로 보이기 & 색상 입히기 */
+    [data-testid="stSidebarCollapsedControl"] {
+        display: block !important;
+        visibility: visible !important;
+        color: #4E342E !important; /* 진한 갈색 */
+        background-color: rgba(255, 255, 255, 0.5) !important; /* 반투명 흰색 배경 추가 */
+        border-radius: 5px;
+        z-index: 999999 !important;
+    }
+    
+    /* 모바일 최적화 여백 */
     .block-container { padding-top: 50px !important; }
     
     /* 버튼 스타일 */
@@ -384,3 +400,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
