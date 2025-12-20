@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import hashlib
 import time
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
 from streamlit_option_menu import option_menu
 from streamlit_gsheets import GSheetsConnection
 
@@ -27,21 +27,21 @@ st.markdown("""
         background-color: transparent !important; 
     }
     
-    /* 2. 불필요한 장식(무지개 줄, 로딩 아이콘) 숨기기 */
+    /* 2. 불필요한 장식 숨기기 */
     [data-testid="stDecoration"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
+    [data-testid="stToolbar"] { display: none !important; }
     
-    /* 3. [중요] 사이드바 여는 화살표 버튼(>) 강제로 보이기 & 색상 입히기 */
+    /* 3. 사이드바 여는 화살표 버튼(>) 스타일링 */
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important;
         visibility: visible !important;
-        color: #4E342E !important; /* 진한 갈색 */
-        background-color: rgba(255, 255, 255, 0.5) !important; /* 반투명 흰색 배경 추가 */
+        color: #4E342E !important;
+        background-color: rgba(255, 255, 255, 0.5) !important;
         border-radius: 5px;
         z-index: 999999 !important;
     }
     
-    /* 모바일 최적화 여백 */
     .block-container { padding-top: 50px !important; }
     
     /* 버튼 스타일 */
@@ -61,7 +61,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- [2. 구글 시트 데이터 관리 (캐싱 적용)] ---
+# --- [2. 구글 시트 데이터 관리 (수정됨)] ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 SHEET_NAMES = {
@@ -72,11 +72,14 @@ SHEET_NAMES = {
     "routine_log": "routine_log"
 }
 
-# [핵심] 60초(ttl=60) 동안은 데이터를 메모리에 기억해둠 (구글 API 보호)
+# [핵심 수정] 
+# 평소에는 60초간 캐시를 유지하되(API 절약),
+# 데이터를 가져올 때는(ttl=0) 구글 서버에서 최신본을 가져오도록 강제함
 @st.cache_data(ttl=60)
 def load_data(key):
     try:
-        return conn.read(worksheet=SHEET_NAMES[key])
+        # ttl=0을 여기에 넣어야 '캐시 갱신' 시점에 진짜 최신 데이터를 가져옵니다.
+        return conn.read(worksheet=SHEET_NAMES[key], ttl=0)
     except Exception:
         return pd.DataFrame()
 
@@ -86,11 +89,11 @@ def load(key):
 def save(key, df):
     try:
         conn.update(worksheet=SHEET_NAMES[key], data=df)
-        # 중요: 저장을 했으면 기억해둔 데이터(캐시)를 지워서 최신화
+        # 저장 후엔 반드시 캐시를 비워서, 다음 번 load때 새 데이터를 가져오게 함
         load_data.clear()
     except Exception as e:
         if "429" in str(e):
-            st.error("⚠️ 구글 시트 사용량이 많아 잠시 대기 중입니다. 1분 뒤 다시 시도해주세요.")
+            st.error("⚠️ 잠시 대기! 구글 시트 사용량이 많습니다. 1분 뒤 다시 시도해주세요.")
         else:
             st.error(f"저장 실패: {e}")
 
@@ -100,13 +103,12 @@ def hash_password(password):
 def init_db():
     try:
         users = load("users")
-        # 데이터가 없으면 초기화
         if users.empty or "username" not in users.columns:
             admin_pw = hash_password("1234")
             init_users = pd.DataFrame([{"username": "admin", "password": admin_pw, "name": "사장님", "role": "Manager"}])
             save("users", init_users)
         
-        # 다른 테이블도 한 번씩 호출하여 캐시에 등록
+        # 캐시 워밍업 (한 번씩 건드려주기)
         load("posts")
         load("routine_def")
     except:
@@ -114,12 +116,11 @@ def init_db():
 
 init_db()
 
-# --- [3. 날짜 계산 로직] ---
+# --- [3. 날짜 및 업무 로직] ---
 def is_task_due(start_date_str, cycle_type, interval_val):
     try:
         if pd.isna(start_date_str) or str(start_date_str).strip() == "": return False
         
-        # 날짜 형식이 다양할 수 있어 처리
         try:
             start_date = datetime.strptime(str(start_date_str), "%Y-%m-%d").date()
         except:
@@ -147,9 +148,7 @@ def get_pending_routines():
     
     for _, task in defs.iterrows():
         if is_task_due(task.get("start_date"), task.get("cycle_type"), task.get("interval_val", 1)):
-            # 완료 여부 체크
             if not logs.empty:
-                # 안전하게 문자열로 변환하여 비교
                 done = logs[(logs["task_id"].astype(str) == str(task["id"])) & (logs["done_date"] == today_str)]
                 if done.empty:
                     pending_tasks.append(task["task_name"])
@@ -172,6 +171,10 @@ def login_page():
                 users = load("users")
                 hashed_pw = hash_password(upw)
                 if not users.empty:
+                    # 데이터 타입 안전 처리
+                    users["username"] = users["username"].astype(str)
+                    users["password"] = users["password"].astype(str)
+                    
                     user = users[(users["username"] == uid) & (users["password"] == hashed_pw)]
                     if not user.empty:
                         st.session_state.update({"logged_in": True, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
@@ -205,7 +208,9 @@ def page_board(board_name, icon):
             if st.form_submit_button("등록"):
                 df = load("posts")
                 new_id = 1
-                if not df.empty and "id" in df.columns: new_id = pd.to_numeric(df["id"]).max() + 1
+                if not df.empty and "id" in df.columns: 
+                    # ID가 문자로 저장되었을 경우를 대비해 숫자로 변환
+                    new_id = pd.to_numeric(df["id"], errors='coerce').fillna(0).max() + 1
                 
                 new_post = pd.DataFrame([{"id": new_id, "board_type": board_name, "title": title, "content": content, "author": st.session_state["name"], "date": datetime.now().strftime("%Y-%m-%d")}])
                 
@@ -219,33 +224,42 @@ def page_board(board_name, icon):
     if posts.empty:
         st.info("작성된 글이 없습니다.")
     else:
-        # 해당 게시판 글만 필터링
-        my_posts = posts[posts["board_type"] == board_name]
-        # ID 기준 내림차순 정렬 (최신글 위로)
-        if not my_posts.empty:
-            my_posts = my_posts.sort_values("id", ascending=False)
-        
-        for _, row in my_posts.iterrows():
-            with st.container():
-                st.markdown(f"### {row['title']}")
-                st.caption(f"{row['author']} | {row['date']}")
-                st.write(row['content'])
+        # [수정] 데이터 필터링 시 공백 제거 및 문자열 변환으로 안전하게 비교
+        if "board_type" in posts.columns:
+            # " 본점 " 처럼 공백이 들어가도 찾을 수 있게 .str.strip() 추가
+            my_posts = posts[posts["board_type"].astype(str).str.strip() == board_name]
+            
+            if my_posts.empty:
+                st.info("작성된 글이 없습니다.")
+            else:
+                # 최신글 위로 정렬
+                my_posts = my_posts.sort_values("id", ascending=False)
                 
-                st.markdown("---")
-                if not comments.empty:
-                    post_comments = comments[comments["post_id"].astype(str) == str(row["id"])]
-                    for _, c in post_comments.iterrows():
-                        st.markdown(f"<div class='comment-box'><b>{c['author']}</b>: {c['content']} <span style='color:#aaa; font-size:0.8em;'>({c['date']})</span></div>", unsafe_allow_html=True)
-                
-                with st.form(f"comment_{row['id']}"):
-                    c1, c2 = st.columns([4, 1])
-                    c_txt = c1.text_input("댓글", label_visibility="collapsed", placeholder="댓글 달기")
-                    if c2.form_submit_button("전송"):
-                        new_comment = pd.DataFrame([{"post_id": row["id"], "author": st.session_state["name"], "content": c_txt, "date": datetime.now().strftime("%m-%d %H:%M")}])
-                        if comments.empty: save("comments", new_comment)
-                        else: save("comments", pd.concat([comments, new_comment], ignore_index=True))
-                        st.rerun()
-                st.divider()
+                for _, row in my_posts.iterrows():
+                    with st.container():
+                        st.markdown(f"### {row['title']}")
+                        st.caption(f"{row['author']} | {row['date']}")
+                        st.write(row['content'])
+                        
+                        st.markdown("---")
+                        # 댓글 표시
+                        if not comments.empty:
+                            post_comments = comments[comments["post_id"].astype(str) == str(row["id"])]
+                            for _, c in post_comments.iterrows():
+                                st.markdown(f"<div class='comment-box'><b>{c['author']}</b>: {c['content']} <span style='color:#aaa; font-size:0.8em;'>({c['date']})</span></div>", unsafe_allow_html=True)
+                        
+                        # 댓글 입력
+                        with st.form(f"comment_{row['id']}"):
+                            c1, c2 = st.columns([4, 1])
+                            c_txt = c1.text_input("댓글", label_visibility="collapsed", placeholder="댓글 달기")
+                            if c2.form_submit_button("전송"):
+                                new_comment = pd.DataFrame([{"post_id": row["id"], "author": st.session_state["name"], "content": c_txt, "date": datetime.now().strftime("%m-%d %H:%M")}])
+                                if comments.empty: save("comments", new_comment)
+                                else: save("comments", pd.concat([comments, new_comment], ignore_index=True))
+                                st.rerun()
+                        st.divider()
+        else:
+            st.error("데이터 오류: 'board_type' 컬럼을 찾을 수 없습니다. 시트 제목줄을 확인해주세요.")
 
 def page_routine():
     st.header("🔄 반복 업무 관리")
@@ -260,7 +274,6 @@ def page_routine():
     tab_list, tab_log = st.tabs(["📝 오늘의 업무", "📜 업무 기록"])
 
     with tab_list:
-        # [관리자 전용 설정]
         if st.session_state["role"] in ["Manager", "관리자"]:
             with st.expander("⚙️ 업무 추가/삭제 (관리자)"):
                 with st.form("add_routine"):
@@ -300,7 +313,6 @@ def page_routine():
         
         st.divider()
         
-        # [오늘 할 일 표시]
         if defs.empty:
             st.info("등록된 반복 업무가 없습니다.")
         else:
@@ -353,7 +365,6 @@ def page_routine():
             st.info("기록이 없습니다.")
         else:
             if not defs.empty:
-                # 병합을 위해 타입 통일
                 logs["task_id"] = logs["task_id"].astype(str)
                 defs["id"] = defs["id"].astype(str)
                 merged = pd.merge(logs, defs, left_on="task_id", right_on="id", how="left")
@@ -379,7 +390,6 @@ def main():
                 st.session_state.logged_in = False
                 st.rerun()
 
-        # 알림 로직
         pending = get_pending_routines()
         
         if st.session_state.get("show_login_alert", False):
@@ -400,4 +410,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
