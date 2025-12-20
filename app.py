@@ -28,7 +28,7 @@ st.markdown("""
     [data-testid="stStatusWidget"] { display: none !important; }
     [data-testid="stToolbar"] { display: none !important; }
     
-    /* 사이드바 화살표 버튼 */
+    /* 사이드바 화살표 버튼 (진한 갈색, 잘 보이게) */
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important;
         visibility: visible !important;
@@ -61,10 +61,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- [쿠키 매니저 초기화] ---
+# --- [쿠키 매니저 초기화 (수정됨)] ---
 cookies = CookieManager()
-if not cookies.ready():
-    st.stop()
+# 주의: 모바일에서 cookies.ready()가 False일 때 st.stop()을 걸면 무한 로딩(흰 화면)에 걸립니다.
+# 따라서 st.stop()을 주석 처리하여 일단 화면이 뜨게 합니다.
+# if not cookies.ready():
+#     st.stop()
 
 # --- [2. 구글 시트 데이터 관리] ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -80,6 +82,7 @@ SHEET_NAMES = {
 @st.cache_data(ttl=60)
 def load_data(key):
     try:
+        # 캐시 갱신을 위해 ttl=0 옵션 사용
         return conn.read(worksheet=SHEET_NAMES[key], ttl=0)
     except Exception:
         return pd.DataFrame()
@@ -132,7 +135,6 @@ def is_task_due(start_date_str, cycle_type, interval_val):
         return False
     except: return False
 
-# [변경] 이름만 주는게 아니라 '업무 정보 전체'를 반환하도록 수정
 def get_pending_tasks_list():
     defs = load("routine_def")
     logs = load("routine_log")
@@ -158,19 +160,24 @@ def get_pending_tasks_list():
 def login_page():
     st.markdown("<br><h1 style='text-align:center;'>🥐 조각달 업무수첩</h1>", unsafe_allow_html=True)
     
-    if cookies.get("auto_login") == "true":
-        saved_id = cookies.get("uid")
-        saved_pw_hash = cookies.get("upw")
-        if saved_id and saved_pw_hash:
-            users = load("users")
-            if not users.empty:
-                users["username"] = users["username"].astype(str)
-                users["password"] = users["password"].astype(str)
-                user = users[(users["username"] == saved_id) & (users["password"] == saved_pw_hash)]
-                if not user.empty:
-                    st.session_state.update({"logged_in": True, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
-                    st.session_state["show_login_alert"] = True
-                    st.rerun()
+    # 자동 로그인 시도
+    # (모바일에서 쿠키가 늦게 로드되더라도, 다음 리런 때 처리됩니다)
+    try:
+        if cookies.get("auto_login") == "true":
+            saved_id = cookies.get("uid")
+            saved_pw_hash = cookies.get("upw")
+            if saved_id and saved_pw_hash:
+                users = load("users")
+                if not users.empty:
+                    users["username"] = users["username"].astype(str)
+                    users["password"] = users["password"].astype(str)
+                    user = users[(users["username"] == saved_id) & (users["password"] == saved_pw_hash)]
+                    if not user.empty:
+                        st.session_state.update({"logged_in": True, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
+                        st.session_state["show_login_alert"] = True
+                        st.rerun()
+    except Exception:
+        pass # 쿠키 로드 에러 무시
 
     tab1, tab2 = st.tabs(["로그인", "회원가입"])
     
@@ -190,6 +197,8 @@ def login_page():
                     if not user.empty:
                         st.session_state.update({"logged_in": True, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
                         st.session_state["show_login_alert"] = True
+                        
+                        # 쿠키 저장
                         if auto_login:
                             cookies["auto_login"] = "true"
                             cookies["uid"] = uid
@@ -251,6 +260,7 @@ def page_board(board_name, icon):
             else:
                 my_posts = my_posts.sort_values("id", ascending=False)
                 for _, row in my_posts.iterrows():
+                    # 제목 클릭 시 펼쳐지게 함
                     expander_label = f"{row['title']}   (✍️ {row['author']} | 📅 {row['date']})"
                     
                     with st.expander(expander_label):
@@ -315,6 +325,7 @@ def page_routine():
                             st.rerun()
         st.divider()
         
+        # 일반 목록 표시 (배너는 main함수에서 처리)
         pending_tasks = get_pending_tasks_list()
         
         if not pending_tasks:
@@ -361,8 +372,7 @@ def main():
                 cookies.save()
                 st.rerun()
 
-        # [여기가 핵심 변경 사항]
-        # 상단에 미완료 업무가 있을 때만 '클릭 가능한 붉은 배너(Expander)' 표시
+        # [미완료 업무 배너 로직]
         pending = get_pending_tasks_list()
         
         # 1. 로그인 직후 토스트 알림
@@ -372,7 +382,7 @@ def main():
 
         # 2. 클릭 가능한 배너 (Expander 활용)
         if pending:
-            label = f"🚨 [긴급] 오늘 미완료 업무가 {len(pending)}건 있습니다! (눌러서 바로 처리하기)"
+            label = f"🚨 [긴급] 오늘 미완료 업무가 {len(pending)}건 있습니다! (눌러서 처리)"
             with st.expander(label, expanded=False):
                 st.markdown("아래 버튼을 누르면 즉시 완료 처리됩니다.")
                 for task in pending:
