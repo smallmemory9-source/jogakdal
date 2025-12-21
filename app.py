@@ -74,7 +74,7 @@ st.markdown("""
     }
     .stButton>button:hover { background-color: #6D4C41; color: #FFF8E1; }
     
-    /* 인폼노트 확인 버튼 스타일 (초록색) */
+    /* 인폼노트 확인 버튼 (초록) */
     .confirm-btn > button { background-color: #2E7D32 !important; }
     .confirm-btn > button:hover { background-color: #1B5E20 !important; }
 
@@ -86,6 +86,8 @@ st.markdown("""
     .logo-title-container h1 { margin: 0 0 0 10px; font-size: 1.8rem; }
     
     .container-xxl { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
+    
+    .streamlit-expanderHeader { font-weight: bold; color: #4E342E; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -95,18 +97,18 @@ cookies = CookieManager()
 # --- [2. 구글 시트 연결] ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# [수정] 인폼노트용 시트 추가 (inform_notes, inform_logs)
 SHEET_NAMES = {
     "users": "users",
     "posts": "posts",
     "comments": "comments",
     "routine_def": "routine_def",
     "routine_log": "routine_log",
-    "inform_notes": "inform_notes", # 인폼 내용 저장
-    "inform_logs": "inform_logs"    # 확인 이력 저장
+    "inform_notes": "inform_notes",
+    "inform_logs": "inform_logs"
 }
 
-@st.cache_data(ttl=60)
+# [속도 개선] 데이터 읽을 때 캐시 사용 안 함 (실시간성 보장)
+@st.cache_data(ttl=0)
 def load_data(key):
     try:
         return conn.read(worksheet=SHEET_NAMES[key], ttl=0)
@@ -115,13 +117,19 @@ def load_data(key):
 
 def load(key): return load_data(key)
 
+# [안정성 개선] 저장 실패 시 재시도 로직 (동시 접속자 충돌 방지)
 def save(key, df):
-    try:
-        conn.update(worksheet=SHEET_NAMES[key], data=df)
-        load_data.clear()
-    except Exception as e:
-        if "429" in str(e): st.error("⚠️ 구글 연결량 초과. 잠시 후 시도.")
-        else: st.error(f"저장 실패: {e}")
+    max_retries = 3
+    for i in range(max_retries):
+        try:
+            conn.update(worksheet=SHEET_NAMES[key], data=df)
+            load_data.clear()
+            return True
+        except Exception as e:
+            if i == max_retries - 1:
+                st.error(f"저장 실패 (잠시 후 다시 시도해주세요): {e}")
+                return False
+            time.sleep(1)
 
 def hash_password(password):
     return hashlib.sha256(str(password).encode()).hexdigest()
@@ -144,10 +152,9 @@ def init_db():
                 "department": "전체"
             }])
             save("users", init_users)
-        load("posts")
-        load("routine_def")
-        load("inform_notes") # 초기화 확인
-        load("inform_logs")  # 초기화 확인
+        # 시트 연결 확인용 로드
+        for key in SHEET_NAMES:
+            load(key)
     except: pass
 
 init_db()
@@ -187,7 +194,6 @@ def get_pending_tasks_list():
             if not is_done: pending.append(task)
     return pending
 
-# [신규] 오늘 미확인 인폼노트가 있는지 체크하는 함수
 def get_unconfirmed_inform_list(username):
     informs = load("inform_notes")
     logs = load("inform_logs")
@@ -195,49 +201,41 @@ def get_unconfirmed_inform_list(username):
     if informs.empty: return []
     
     today_str = date.today().strftime("%Y-%m-%d")
-    
-    # 1. 오늘 날짜의 인폼노트 필터링
     today_informs = informs[informs["target_date"] == today_str]
+    
     if today_informs.empty: return []
     
     unconfirmed = []
     for _, note in today_informs.iterrows():
-        # 2. 해당 노트를 내가 확인했는지 체크
         if not logs.empty:
             is_checked = logs[
                 (logs["note_id"].astype(str) == str(note["id"])) & 
                 (logs["username"] == username)
             ]
-            if is_checked.empty:
-                unconfirmed.append(note)
+            if is_checked.empty: unconfirmed.append(note)
         else:
             unconfirmed.append(note)
-            
     return unconfirmed
 
-# [수정] 팝업 로직 통합 (업무 + 인폼노트)
 @st.dialog("🚨 중요 알림")
 def show_notification_popup(tasks, inform_notes):
-    # 1. 인폼노트 (필독 사항) 먼저 표시
     if inform_notes:
-        st.error(f"📢 **오늘의 필독 전달사항 ({len(inform_notes)}건)**")
-        st.write("반드시 내용을 확인하고 '확인' 버튼을 눌러주세요.")
+        st.error(f"📢 **오늘의 필독 사항 ({len(inform_notes)}건)**")
+        st.write("내용 확인 후 '확인' 버튼을 눌러주세요.")
         st.markdown("---")
         for note in inform_notes:
-            st.markdown(f"**📌 {note['title']}**")
-            st.info(note['content'])
-            # 팝업 내에서는 바로가기만 안내 (기술적 한계로 팝업 내 로직 처리 복잡함 방지)
-            st.caption("※ [인폼] 메뉴에서 확인 처리를 해주세요.")
+            preview = note['content'][:30] + "..." if len(note['content']) > 30 else note['content']
+            st.markdown(f"**📌 {preview}**")
+            st.caption("※ [인폼] 메뉴에서 전체 내용을 확인하세요.")
         st.markdown("---")
 
-    # 2. 반복 업무 표시
     if tasks:
         st.warning(f"🔄 **오늘의 반복 업무 ({len(tasks)}건)**")
         for t in tasks:
             st.write(f"• {t['task_name']}")
     
     st.write("")
-    if st.button("닫기 / 확인하러 가기"):
+    if st.button("확인하러 가기"):
         st.rerun()
 
 # --- [4. 화면 구성] ---
@@ -300,86 +298,84 @@ def login_page():
                     st.success("신청 완료")
                 else: st.warning("빈칸 확인")
 
-# [신규] 인폼노트 페이지
+# [인폼노트] 제목 삭제, 날짜 선택, 저장 로직 개선
 def page_inform():
-    st.subheader("📢 인폼노트 (전달사항)")
+    st.subheader("📢 인폼노트")
     
-    # 1. 날짜 선택 (캘린더)
-    selected_date = st.date_input("📅 날짜를 선택하세요", value=date.today())
+    # 조회 날짜 선택
+    selected_date = st.date_input("📅 날짜 조회", value=date.today())
     selected_date_str = selected_date.strftime("%Y-%m-%d")
     
     user_role = st.session_state['role']
-    username = st.session_state['name'] # 세션 이름(ID대신 이름 사용 시 중복 주의, 여기선 username을 key로 쓰는게 좋지만 표시용으로 사용)
-    user_id_val = [k for k,v in cookies.items() if k=='uid'] 
-    real_user_id = user_id_val[0] if user_id_val else "admin" # 쿠키 없으면 admin 가정(로직상 로그인상태)
-    # 세션에서 ID를 정확히 가져오기 위해 users 로드 추천하지만, 간편하게 username으로 처리하거나
-    # 로그인 시 username을 session에 저장했어야 함. 현재 session['name']은 한글 이름.
-    # DB 조회 시 한글 이름으로 매칭하거나 users 다시 로드.
-    # 여기서는 편의상 session_state에 저장된 한글 'name'을 식별자로 씁니다. (실제론 ID 권장)
+    username = st.session_state['name']
     
-    # 2. 글쓰기 (Master/Manager 전용)
+    # 글쓰기 (Master/Manager)
     if user_role in ["Master", "Manager"]:
-        with st.expander("📝 새 인폼 작성하기"):
+        with st.expander("📝 인폼 작성"):
             with st.form("new_inform"):
-                it = st.text_input("제목")
-                ic = st.text_area("전달 내용")
-                if st.form_submit_button("작성 완료"):
-                    df = load("inform_notes")
-                    nid = 1 if df.empty else pd.to_numeric(df["id"], errors='coerce').fillna(0).max()+1
-                    new_note = pd.DataFrame([{
-                        "id": nid, "target_date": selected_date_str, 
-                        "title": it, "content": ic, "author": username, 
-                        "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
-                    }])
-                    if df.empty: save("inform_notes", new_note)
-                    else: save("inform_notes", pd.concat([df, new_note], ignore_index=True))
-                    st.success("등록되었습니다."); st.rerun()
+                target_date_input = st.date_input("업무 수행일", value=selected_date)
+                ic = st.text_area("전달 내용 (필수)", height=100)
+                
+                if st.form_submit_button("등록"):
+                    if ic.strip() == "":
+                        st.warning("내용을 입력해주세요.")
+                    else:
+                        df = load("inform_notes")
+                        nid = 1
+                        if not df.empty and "id" in df.columns:
+                            nid = pd.to_numeric(df["id"], errors='coerce').fillna(0).max() + 1
+                        
+                        new_note = pd.DataFrame([{
+                            "id": nid, 
+                            "target_date": target_date_input.strftime("%Y-%m-%d"), 
+                            "content": ic, 
+                            "author": username, 
+                            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+                        }])
+                        
+                        if df.empty: save("inform_notes", new_note)
+                        else: save("inform_notes", pd.concat([df, new_note], ignore_index=True))
+                        st.success("등록 완료")
+                        time.sleep(1)
+                        st.rerun()
 
-    # 3. 해당 날짜의 인폼노트 조회
+    # 조회
     notes = load("inform_notes")
-    logs = load("inform_logs") # 확인 이력
-    cmts = load("comments")    # 댓글
+    logs = load("inform_logs")
+    cmts = load("comments")
     
     if notes.empty:
         st.info("등록된 전달사항이 없습니다.")
         return
 
-    # 날짜 필터링
     daily_notes = notes[notes["target_date"] == selected_date_str]
     
     if daily_notes.empty:
-        st.info(f"{selected_date_str} 에 등록된 전달사항이 없습니다.")
+        st.info(f"{selected_date_str} 의 인폼이 없습니다.")
     else:
-        # 최신순 정렬
         daily_notes = daily_notes.sort_values("id", ascending=False)
         
         for _, r in daily_notes.iterrows():
             note_id = str(r["id"])
             
-            # 카드 형태로 표시
             with st.container():
                 st.markdown(f"""
                 <div style="border:1px solid #ddd; padding:15px; border-radius:10px; background-color:white; margin-bottom:10px;">
-                    <div style="font-size:1.1em; font-weight:bold; color:#4E342E;">📌 {r['title']}</div>
-                    <div style="font-size:0.8em; color:#888; margin-bottom:10px;">작성자: {r['author']} | 등록: {r['created_at']}</div>
-                    <div style="white-space: pre-wrap; line-height:1.5;">{r['content']}</div>
+                    <div style="font-size:0.9em; color:#8D6E63; font-weight:bold;">📅 {r['target_date']} | ✍️ {r['author']}</div>
+                    <div style="white-space: pre-wrap; line-height:1.6; font-size:1.05em; margin-top:10px; color:#333;">{r['content']}</div>
                 </div>
                 """, unsafe_allow_html=True)
                 
-                # 확인(서명) 로직
                 confirmed_users = []
                 if not logs.empty:
-                    # 해당 노트에 대한 확인 이력 가져오기
                     l = logs[logs["note_id"].astype(str) == note_id]
                     confirmed_users = l["username"].tolist()
                 
-                # 아직 확인 안 했으면 버튼 표시
                 if username not in confirmed_users:
-                    c_col1, c_col2 = st.columns([1, 4])
-                    with c_col1:
-                        # 초록색 버튼 class 적용
+                    c1, c2 = st.columns([1, 4])
+                    with c1:
                         st.markdown('<div class="confirm-btn">', unsafe_allow_html=True)
-                        if st.button("확인했습니다 ✅", key=f"confirm_{note_id}"):
+                        if st.button("확인함 ✅", key=f"confirm_{note_id}"):
                             nl = pd.DataFrame([{
                                 "note_id": note_id, "username": username, 
                                 "confirmed_at": datetime.now().strftime("%m-%d %H:%M")
@@ -391,33 +387,27 @@ def page_inform():
                 else:
                     st.success("✅ 확인 완료")
 
-                # 확인한 사람 목록 토글
-                with st.expander(f"👀 확인한 직원 ({len(confirmed_users)}명)"):
-                    if confirmed_users:
-                        st.write(", ".join(confirmed_users))
-                    else:
-                        st.write("아직 확인한 직원이 없습니다.")
+                with st.expander(f"👀 확인자 ({len(confirmed_users)}명)"):
+                    if confirmed_users: st.write(", ".join(confirmed_users))
+                    else: st.write("-")
                 
-                # 댓글 기능 (특이사항)
+                # 댓글
                 if not cmts.empty:
                     note_cmts = cmts[cmts["post_id"].astype(str) == f"inform_{note_id}"]
                     for _, c in note_cmts.iterrows():
-                        st.markdown(f"<div class='comment-box'><b>{c['author']}</b>: {c['content']} <span style='color:#aaa;'>({c['date']})</span></div>", unsafe_allow_html=True)
+                        st.markdown(f"<div class='comment-box'><b>{c['author']}</b>: {c['content']}</div>", unsafe_allow_html=True)
                 
                 with st.form(f"cmt_inform_{note_id}"):
                     c1, c2 = st.columns([4,1])
-                    ctxt = c1.text_input("특이사항 댓글", placeholder="특이사항이 있다면 남겨주세요", label_visibility="collapsed")
+                    ctxt = c1.text_input("댓글", label_visibility="collapsed", placeholder="특이사항 작성")
                     if c2.form_submit_button("등록"):
-                        # 인폼노트 댓글은 post_id 앞에 'inform_'을 붙여서 구분
-                        nc = pd.DataFrame([{"post_id": f"inform_{note_id}", "author": username, "content": ctxt, "date": datetime.now().strftime("%m-%d %H:%M")}])
-                        if cmts.empty: save("comments", nc)
-                        else: save("comments", pd.concat([cmts, nc], ignore_index=True))
-                        st.rerun()
-                
+                        if ctxt.strip():
+                            nc = pd.DataFrame([{"post_id": f"inform_{note_id}", "author": username, "content": ctxt, "date": datetime.now().strftime("%m-%d %H:%M")}])
+                            if cmts.empty: save("comments", nc)
+                            else: save("comments", pd.concat([cmts, nc], ignore_index=True))
+                            st.rerun()
                 st.markdown("---")
 
-
-# [기존 페이지 함수들 유지 - staff_mgmt, board, routine]
 def page_staff_mgmt():
     st.subheader("👥 직원 관리")
     users = load("users")
@@ -468,7 +458,8 @@ def page_board(b_name, icon):
     user_role = st.session_state['role']
     can_write = (user_role in ["Master", "Manager"]) or (b_name == "건의사항")
     if can_write:
-        with st.expander("✏️ 글쓰기"):
+        expander_title = "✏️ 건의사항 올리기" if b_name == "건의사항" else "✏️ 글 쓰기"
+        with st.expander(expander_title):
             with st.form(f"w_{b_name}"):
                 tt = st.text_input("제목"); ct = st.text_area("내용")
                 if st.form_submit_button("등록"):
@@ -580,7 +571,6 @@ def main():
         menu_icons = []
         dept = st.session_state.get('department', '전체')
         
-        # [수정] 인폼 메뉴 추가
         menu_opts.append("인폼")
         menu_icons.append("calendar-check")
         
@@ -612,10 +602,9 @@ def main():
         if m=="나가기":
             st.session_state.logged_in=False; cookies["auto_login"]="false"; cookies.save(); st.rerun()
 
-        # [수정] 팝업 로직 (인폼노트 미확인 건 포함)
+        # 팝업 로직 (인폼 미확인 + 업무)
         if st.session_state.get("show_popup_on_login", False):
             pt = get_pending_tasks_list()
-            # 오늘 미확인 인폼노트 조회
             unconfirmed_informs = get_unconfirmed_inform_list(st.session_state['name'])
             
             if pt or unconfirmed_informs:
@@ -623,7 +612,7 @@ def main():
             st.session_state["show_popup_on_login"] = False
 
         if m == "관리": page_staff_mgmt()
-        elif m == "인폼": page_inform() # [추가] 인폼노트 페이지 연결
+        elif m == "인폼": page_inform()
         elif m == "본점": page_board("본점", "🏠")
         elif m == "작업장": page_board("작업장", "🏭")
         elif m == "건의": page_board("건의사항", "💡")
