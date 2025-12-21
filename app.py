@@ -8,7 +8,7 @@ from datetime import datetime, date
 from streamlit_option_menu import option_menu
 from streamlit_gsheets import GSheetsConnection
 from streamlit_cookies_manager import CookieManager
-from PIL import Image, ImageOps # ImageOps 추가
+from PIL import Image # 이미지 처리를 위한 필수 도구
 
 # --- [0. 기본 설정] ---
 st.set_page_config(
@@ -132,41 +132,27 @@ def init_db():
         load("routine_def")
     except: pass
 
-init_db()
-
-# --- [이미지 처리 함수 (수정됨)] ---
+# --- [이미지 처리 함수 (최종 수정: 흰색 배경 투명화)] ---
 @st.cache_data
 def get_processed_logo(image_path, icon_size=(40, 40)):
     try:
+        # 1. 이미지를 열어서 RGBA(색상+투명도) 모드로 변환
         img = Image.open(image_path).convert("RGBA")
-        
-        # 1. 흰색 배경 투명화
         datas = img.getdata()
+
+        # 2. 모든 픽셀을 검사하여 흰색(또는 아주 밝은 색)을 투명하게 변경
         newData = []
         for item in datas:
+            # R, G, B 값이 모두 200 이상이면 흰색 배경으로 간주
             if item[0] > 200 and item[1] > 200 and item[2] > 200:
-                newData.append((255, 255, 255, 0))
+                newData.append((255, 255, 255, 0)) # 완전 투명(Alpha=0)으로 설정
             else:
-                newData.append(item)
+                newData.append(item) # 나머지는 원래 색상 유지
+        
+        # 3. 처리된 데이터를 이미지에 적용
         img.putdata(newData)
         
-        # 2. 글씨 부분 자르기 (개선된 방식)
-        # 이미지의 내용이 있는 부분(투명이 아닌 부분)의 경계박스를 구합니다.
-        bbox = img.getbbox()
-        if bbox:
-            # 경계박스 기준으로 이미지를 자릅니다. (상하좌우 여백 제거)
-            img = img.crop(bbox)
-            
-            # 글씨가 있는 하단부를 제거하기 위해, 이미지 하단에서부터 스캔하여
-            # 로고 본체와 글씨 사이의 여백을 찾아 자릅니다.
-            # (여기서는 대략적인 비율로 하단 25%를 글씨 영역으로 가정하고 자릅니다.
-            #  더 정확한 분리를 위해서는 글씨와 로고 사이의 간격을 픽셀 단위로 분석해야 하지만,
-            #  일반적인 경우 이 정도로 충분합니다.)
-            width, height = img.size
-            crop_height = int(height * 0.75) # 상위 75%만 남김 (하단 글씨 제거)
-            img = img.crop((0, 0, width, crop_height))
-
-        # 3. 아이콘 크기로 리사이즈
+        # 4. 아이콘 크기로 리사이즈 (잘라내기 단계 삭제됨)
         img = img.resize(icon_size, Image.LANCZOS)
         return img
     except Exception as e:
@@ -217,8 +203,8 @@ def get_pending_tasks_list():
 def login_page():
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # 로그인 화면용 로고 (크기 조절)
-    processed_logo = get_processed_logo("logo.png", icon_size=(80, 80)) # 크기를 조금 키웠습니다.
+    # 로그인 화면용 로고 (크기 조절: 80x80)
+    processed_logo = get_processed_logo("logo.png", icon_size=(80, 80))
     
     if processed_logo:
         st.markdown("""
