@@ -41,7 +41,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed" 
 )
 
-# 아이콘 강제 적용
 processed_icon = get_processed_logo("logo.png", icon_size=(192, 192))
 if processed_icon:
     icon_base64 = image_to_base64(processed_icon)
@@ -118,11 +117,6 @@ st.markdown("""
         align-items: center;
         margin-bottom: 10px;
     }
-    
-    /* 권한 뱃지 스타일 */
-    .role-badge {
-        padding: 2px 8px; border-radius: 10px; font-size: 0.8em; font-weight: bold; color: white;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -163,10 +157,8 @@ def hash_password(password):
 def init_db():
     try:
         users = load("users")
-        # [초기 계정 생성] admin / 1234 -> 권한: Master, approved: True
         if users.empty or "username" not in users.columns:
             admin_pw = hash_password("1234")
-            # approved 컬럼 추가 (True/False 문자열로 저장)
             init_users = pd.DataFrame([{
                 "username": "admin", 
                 "password": admin_pw, 
@@ -216,9 +208,12 @@ def get_pending_tasks_list():
             if not is_done: pending.append(task)
     return pending
 
+# [헬퍼 함수] 승인 여부 체크 (대소문자 무시)
+def check_approved(val):
+    return str(val).strip().lower() == "true"
+
 # --- [4. 화면 구성] ---
 
-# [1] 로그인 & 회원가입 페이지 (수정됨: 승인 로직 추가)
 def login_page():
     st.markdown("<br>", unsafe_allow_html=True)
     processed_logo = get_processed_logo("logo.png", icon_size=(80, 80))
@@ -232,7 +227,7 @@ def login_page():
     else:
         st.markdown("<h1 style='text-align:center;'>업무수첩</h1>", unsafe_allow_html=True)
 
-    # 자동 로그인 시도
+    # 자동 로그인
     try:
         if cookies.get("auto_login") == "true":
             sid, spw = cookies.get("uid"), cookies.get("upw")
@@ -241,18 +236,16 @@ def login_page():
                 if not users.empty:
                     users["username"] = users["username"].astype(str)
                     users["password"] = users["password"].astype(str)
-                    # 승인된 사용자만 자동 로그인 가능
                     u = users[(users["username"] == sid) & (users["password"] == spw)]
                     if not u.empty:
-                        # approved 체크 (문자열 'True' 인지 확인)
-                        if str(u.iloc[0].get("approved", "False")) == "True":
+                        # [수정] 대소문자 무시하고 승인 여부 확인
+                        if check_approved(u.iloc[0].get("approved", "False")):
                             st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"], "show_login_alert": True})
                             st.rerun()
     except: pass
 
     tab1, tab2 = st.tabs(["로그인", "회원가입 요청"])
     
-    # [로그인 탭]
     with tab1:
         with st.form("login"):
             uid = st.text_input("아이디")
@@ -266,10 +259,8 @@ def login_page():
                     users["password"] = users["password"].astype(str)
                     u = users[(users["username"] == uid) & (users["password"] == hpw)]
                     if not u.empty:
-                        # [핵심] 승인 여부 체크
-                        is_approved = str(u.iloc[0].get("approved", "False")) == "True"
-                        
-                        if is_approved:
+                        # [수정] 대소문자 무시하고 승인 여부 확인
+                        if check_approved(u.iloc[0].get("approved", "False")):
                             st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"], "show_login_alert": True})
                             if auto:
                                 cookies["auto_login"] = "true"
@@ -284,7 +275,6 @@ def login_page():
                     else: st.error("아이디 또는 비밀번호가 틀렸습니다.")
                 else: st.error("DB 접속 오류")
 
-    # [회원가입 신청 탭]
     with tab2:
         with st.form("signup"):
             st.write("가입을 신청하면 Master 승인 후 이용 가능합니다.")
@@ -297,13 +287,12 @@ def login_page():
                 if not users.empty and new_id in users["username"].values:
                     st.error("이미 존재하는 아이디입니다.")
                 elif new_id and new_pw and new_name:
-                    # 신규 가입 시 approved = "False"로 저장
                     new_user = pd.DataFrame([{
                         "username": new_id, 
                         "password": hash_password(new_pw), 
                         "name": new_name, 
-                        "role": "Staff",   # 기본은 Staff
-                        "approved": "False" # 승인 대기 상태
+                        "role": "Staff", 
+                        "approved": "False"
                     }])
                     if users.empty: save("users", new_user)
                     else: save("users", pd.concat([users, new_user], ignore_index=True))
@@ -311,7 +300,6 @@ def login_page():
                 else:
                     st.warning("모든 항목을 입력해주세요.")
 
-# [2] 직원 관리 페이지 (Master 전용 - 승인 기능 추가)
 def page_staff_mgmt():
     st.header("👥 직원 관리 (Master 전용)")
     
@@ -320,12 +308,13 @@ def page_staff_mgmt():
         st.info("데이터가 없습니다.")
         return
 
-    # 승인 여부 컬럼이 없으면 False로 간주
     if "approved" not in users.columns:
         users["approved"] = "False"
 
-    # [1] 승인 대기 목록 (approved != "True")
-    pending_users = users[users["approved"] != "True"]
+    # [수정] 대소문자 무시하고 승인 대기 필터링
+    # 승인이 안 된(False, false, 빈칸 등) 사람만 추출
+    users["approved_norm"] = users["approved"].apply(lambda x: str(x).strip().lower())
+    pending_users = users[users["approved_norm"] != "true"]
     
     if not pending_users.empty:
         st.subheader("⏳ 승인 대기 요청")
@@ -337,22 +326,25 @@ def page_staff_mgmt():
                 c1.write(f"**{row['name']}** ({row['role']})")
                 c2.write(f"ID: {row['username']}")
                 
-                # 수락 버튼
                 if c3.button("수락", key=f"approve_{row['username']}"):
                     users.loc[users["username"] == row["username"], "approved"] = "True"
+                    # 임시 컬럼 제거 후 저장
+                    if "approved_norm" in users.columns: del users["approved_norm"]
                     save("users", users)
                     st.rerun()
                 
-                # 거절(삭제) 버튼
                 if c4.button("거절", key=f"reject_{row['username']}"):
                     users = users[users["username"] != row["username"]]
+                    if "approved_norm" in users.columns: del users["approved_norm"]
                     save("users", users)
                     st.rerun()
         st.divider()
 
-    # [2] 정식 직원 목록 (approved == "True")
     st.subheader("✅ 정식 직원 목록")
-    active_users = users[users["approved"] == "True"]
+    # [수정] 대소문자 무시하고 승인된 사람 필터링
+    if "approved_norm" not in users.columns:
+         users["approved_norm"] = users["approved"].apply(lambda x: str(x).strip().lower())
+    active_users = users[users["approved_norm"] == "true"]
     
     if not active_users.empty:
         for index, row in active_users.iterrows():
@@ -360,19 +352,17 @@ def page_staff_mgmt():
                 c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
                 c1.write(f"**{row['name']}**")
                 c2.write(f"ID: {row['username']}")
-                
-                # 권한 변경 (selectbox 사용 시 리로드 문제로 텍스트로 표시하거나 팝업 필요하지만, 여기선 단순 표시)
                 c3.write(f"Role: {row['role']}")
                 
                 if row['username'] != "admin" and row['username'] != st.session_state['name']: 
                     if c4.button("삭제", key=f"del_active_{row['username']}"):
                         new_df = users[users["username"] != row['username']]
+                        if "approved_norm" in new_df.columns: del new_df["approved_norm"]
                         save("users", new_df)
                         st.rerun()
     else:
         st.info("등록된 직원이 없습니다.")
 
-# [3] 게시판 페이지
 def page_board(b_name, icon):
     st.header(f"{icon} {b_name} 게시판")
     user_role = st.session_state['role']
@@ -453,7 +443,6 @@ def page_board(b_name, icon):
                                     else: save("comments", pd.concat([cmts, nc], ignore_index=True))
                                     st.rerun()
 
-# [4] 업무 페이지
 def page_routine():
     st.header("🔄 반복 업무")
     defs = load("routine_def")
@@ -511,7 +500,6 @@ def page_routine():
                 m = m.sort_values(["done_date", "created_at"], ascending=False)
                 st.dataframe(m[["done_date", "task_name", "worker"]], use_container_width=True, hide_index=True)
 
-# [5] 메인 실행 함수
 def main():
     if "logged_in" not in st.session_state: st.session_state.logged_in = False
     
