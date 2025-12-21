@@ -4,7 +4,7 @@ import hashlib
 import time
 import io
 import base64
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from streamlit_option_menu import option_menu
 from streamlit_gsheets import GSheetsConnection
 from streamlit_cookies_manager import CookieManager
@@ -38,7 +38,7 @@ st.set_page_config(
     page_title="조각달과자점 파트너", 
     page_icon="logo.png", 
     layout="wide", 
-    initial_sidebar_state="expanded" # 항상 펼침 상태 유지
+    initial_sidebar_state="collapsed" # 사이드바 숨김
 )
 
 processed_icon = get_processed_logo("logo.png", icon_size=(192, 192))
@@ -55,8 +55,7 @@ if processed_icon:
         unsafe_allow_html=True
     )
 
-# --- [1. CSS 스타일 (메뉴 고정 및 비율 조정)] ---
-# [핵심 수정] 사이드바 너비 33%(1/3)로 확대, 글씨 크기 축소
+# --- [1. CSS 스타일] ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
@@ -67,65 +66,28 @@ st.markdown("""
     [data-testid="stDecoration"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
     
-    /* [수정] 사이드바 너비를 20% -> 33% (약 130px~150px)로 확대 */
-    section[data-testid="stSidebar"] {
-        width: 33% !important;
-        min-width: 120px !important; 
-        max-width: 33% !important;
-        background-color: #FFF3E0;
-        border-right: 1px solid #ddd;
+    /* 상단 메뉴바 스타일 조정 */
+    .nav-link-selected {
+        background-color: #8D6E63 !important;
     }
     
-    /* [수정] 모바일 화면 레이아웃 조정 */
-    @media (max-width: 768px) {
-        section[data-testid="stSidebar"] {
-            display: block !important;
-            z-index: 9999 !important;
-            position: fixed !important; /* 화면에 고정 */
-            height: 100vh !important;
-        }
-        
-        /* 메인 콘텐츠를 오른쪽으로 33% 밀어냄 (사이드바와 겹치지 않게) */
-        .block-container {
-            margin-left: 33% !important;
-            width: 67% !important;
-            padding-left: 0.5rem !important;
-            padding-right: 0.5rem !important;
-            max-width: 67% !important;
-        }
-        
-        /* 사이드바 접기/펼치기 화살표 완전 제거 (항상 고정) */
-        [data-testid="stSidebarCollapsedControl"] {
-            display: none !important;
-        }
-    }
-
-    /* 버튼 스타일 */
     .stButton>button {
         background-color: #8D6E63; color: white; border-radius: 12px; border: none;
         padding: 0.5rem; font-weight: bold; width: 100%; transition: 0.3s;
-        font-size: 0.9rem; /* 버튼 글씨도 살짝 줄임 */
     }
     .stButton>button:hover { background-color: #6D4C41; color: #FFF8E1; }
     
-    .comment-box { background-color: #F5F5F5; padding: 10px; border-radius: 8px; margin-top: 5px; font-size: 0.8rem; }
+    .comment-box { background-color: #F5F5F5; padding: 10px; border-radius: 8px; margin-top: 5px; font-size: 0.9rem; }
     
     .logo-title-container {
-        display: flex; align-items: center; justify-content: center; margin-bottom: 20px;
+        display: flex; align-items: center; justify-content: center; margin-bottom: 10px;
     }
-    .logo-title-container h1 { margin: 0 0 0 10px; font-size: 2.0rem; }
+    .logo-title-container h1 { margin: 0 0 0 10px; font-size: 1.8rem; }
     
-    /* 사이드바 로고 컨테이너 */
-    .sidebar-logo-container {
-        display: flex; align-items: center; margin-bottom: 5px;
-        flex-direction: column; 
+    /* 상단 고정 헤더 영역 */
+    .top-header {
         text-align: center;
-    }
-    
-    /* 토스트 메시지 등 팝업이 사이드바 위에 뜨도록 조정 */
-    .stToast {
-        z-index: 10000 !important;
-        left: 35% !important; /* 사이드바 피해서 오른쪽으로 이동 */
+        padding-bottom: 10px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -158,7 +120,7 @@ def save(key, df):
         conn.update(worksheet=SHEET_NAMES[key], data=df)
         load_data.clear()
     except Exception as e:
-        if "429" in str(e): st.error("⚠️ 연결량 초과. 잠시 후 시도.")
+        if "429" in str(e): st.error("⚠️ 구글 연결량 초과. 1분 뒤 시도해주세요.")
         else: st.error(f"저장 실패: {e}")
 
 def hash_password(password):
@@ -222,12 +184,13 @@ def get_pending_tasks_list():
             if not is_done: pending.append(task)
     return pending
 
-@st.dialog("🚨 오늘의 할 일")
+@st.dialog("🚨 오늘의 할 일 알림")
 def show_notification_popup(tasks):
-    st.write(f"미완료 업무 **{len(tasks)}건**")
+    st.write(f"오늘 처리해야 할 업무가 **{len(tasks)}건** 있습니다!")
     for t in tasks:
         st.error(f"• {t['task_name']}")
-    if st.button("확인"):
+    st.write("")
+    if st.button("확인 (닫기)"):
         st.rerun()
 
 # --- [4. 화면 구성] ---
@@ -245,7 +208,7 @@ def login_page():
     else:
         st.markdown("<h1 style='text-align:center;'>업무수첩</h1>", unsafe_allow_html=True)
 
-    tab1, tab2 = st.tabs(["로그인", "가입신청"])
+    tab1, tab2 = st.tabs(["로그인", "회원가입 요청"])
     
     with tab1:
         with st.form("login"):
@@ -263,6 +226,7 @@ def login_page():
                         if check_approved(u.iloc[0].get("approved", "False")):
                             st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"]})
                             st.session_state["show_popup_on_login"] = True 
+                            
                             if auto:
                                 cookies["auto_login"] = "true"
                                 cookies["uid"] = uid
@@ -273,20 +237,21 @@ def login_page():
                                     cookies["auto_login"] = "false"
                                     cookies.save()
                             st.rerun()
-                        else: st.warning("승인 대기 중")
+                        else:
+                            st.warning("⏳ 아직 승인 대기 중입니다.")
                     else: st.error("정보 불일치")
                 else: st.error("DB 오류")
 
     with tab2:
         with st.form("signup"):
-            st.write("가입 후 승인 대기")
-            new_id = st.text_input("아이디")
-            new_pw = st.text_input("비밀번호", type="password")
+            st.write("가입 신청 후 Master 승인이 필요합니다.")
+            new_id = st.text_input("희망 아이디")
+            new_pw = st.text_input("희망 비밀번호", type="password")
             new_name = st.text_input("이름")
-            if st.form_submit_button("신청"):
+            if st.form_submit_button("가입 신청"):
                 users = load("users")
                 if not users.empty and new_id in users["username"].values:
-                    st.error("중복 ID")
+                    st.error("중복 아이디")
                 elif new_id and new_pw and new_name:
                     new_user = pd.DataFrame([{
                         "username": new_id, "password": hash_password(new_pw), 
@@ -294,11 +259,11 @@ def login_page():
                     }])
                     if users.empty: save("users", new_user)
                     else: save("users", pd.concat([users, new_user], ignore_index=True))
-                    st.success("신청 완료")
+                    st.success("신청 완료!")
                 else: st.warning("빈칸 확인")
 
 def page_staff_mgmt():
-    st.header("👥 직원 관리")
+    st.subheader("👥 직원 관리")
     users = load("users")
     if users.empty: return
     if "approved" not in users.columns: users["approved"] = "False"
@@ -308,17 +273,16 @@ def page_staff_mgmt():
     if not pending.empty:
         st.info(f"승인 대기: {len(pending)}명")
         for _, r in pending.iterrows():
-            c1,c2 = st.columns([3,1])
-            c1.write(f"{r['name']}")
-            with c2:
-                if st.button("✅", key=f"ok_{r['username']}"):
-                    users.loc[users["username"]==r["username"], "approved"]="True"
-                    if "is_approved_bool" in users.columns: del users["is_approved_bool"]
-                    save("users", users); st.rerun()
-                if st.button("❌", key=f"no_{r['username']}"):
-                    users=users[users["username"]!=r["username"]]
-                    if "is_approved_bool" in users.columns: del users["is_approved_bool"]
-                    save("users", users); st.rerun()
+            c1,c2,c3 = st.columns([2,1,1])
+            c1.write(f"{r['name']} ({r['username']})")
+            if c2.button("수락", key=f"ok_{r['username']}"):
+                users.loc[users["username"]==r["username"], "approved"]="True"
+                if "is_approved_bool" in users.columns: del users["is_approved_bool"]
+                save("users", users); st.rerun()
+            if c3.button("거절", key=f"no_{r['username']}"):
+                users=users[users["username"]!=r["username"]]
+                if "is_approved_bool" in users.columns: del users["is_approved_bool"]
+                save("users", users); st.rerun()
     
     st.divider()
     active = users[users["is_approved_bool"] == True]
@@ -333,12 +297,13 @@ def page_staff_mgmt():
                     save("users", users); st.rerun()
 
 def page_board(b_name, icon):
-    st.header(f"{icon} {b_name}")
+    st.subheader(f"{icon} {b_name}")
     user_role = st.session_state['role']
     can_write = (user_role in ["Master", "Manager"]) or (b_name == "건의사항")
     
     if can_write:
-        with st.expander("✏️ 글쓰기"):
+        expander_title = "✏️ 건의사항 올리기" if b_name == "건의사항" else "✏️ 글 쓰기"
+        with st.expander(expander_title):
             with st.form(f"w_{b_name}"):
                 tt = st.text_input("제목")
                 ct = st.text_area("내용")
@@ -349,6 +314,8 @@ def page_board(b_name, icon):
                     if df.empty: save("posts", np)
                     else: save("posts", pd.concat([df, np], ignore_index=True))
                     st.rerun()
+    elif user_role == "Staff" and b_name != "건의사항":
+        st.info("💡 Staff는 글을 읽고 댓글을 달 수 있습니다.")
     
     posts = load("posts")
     cmts = load("comments")
@@ -377,15 +344,15 @@ def page_board(b_name, icon):
                             st.rerun()
 
 def page_routine():
-    st.header("🔄 업무")
+    st.subheader("🔄 업무 체크")
     defs = load("routine_def"); logs = load("routine_log")
     if not defs.empty and "id" not in defs.columns: defs["id"] = range(1, len(defs)+1)
     today = date.today().strftime("%Y-%m-%d")
     
-    t1, t2 = st.tabs(["오늘", "기록"])
+    t1, t2 = st.tabs(["오늘 업무", "기록"])
     with t1:
         if st.session_state['role'] in ["Master", "Manager"]:
-            with st.expander("관리"):
+            with st.expander("업무 관리"):
                 with st.form("new_r"):
                     c1,c2 = st.columns(2); rn = c1.text_input("업무명"); rs = c2.date_input("시작일")
                     c3,c4 = st.columns(2); rc = c3.selectbox("주기", ["매일","매주","매월","N일 간격"]); ri = 1
@@ -404,7 +371,7 @@ def page_routine():
                             save("routine_def", defs[defs["id"]!=r['id']]); st.rerun()
         st.divider()
         ptasks = get_pending_tasks_list()
-        if not ptasks: st.info("완료!")
+        if not ptasks: st.info("모든 업무 완료!")
         else:
             for t in ptasks:
                 st.markdown(f"<div style='padding:10px; border:1px solid #FFCDD2; background:#FFEBEE; border-radius:10px; margin-bottom:5px; font-size:0.9rem;'><b>{t['task_name']}</b></div>", unsafe_allow_html=True)
@@ -439,37 +406,35 @@ def main():
     if not st.session_state.logged_in:
         login_page()
     else:
-        with st.sidebar:
-            processed_logo_sidebar = get_processed_logo("logo.png", icon_size=(50, 50))
-            if processed_logo_sidebar:
-                st.markdown("""
-                    <div class="sidebar-logo-container">
-                        <img src="data:image/png;base64,{}" style="max-height: 50px; width: auto;">
-                    </div>
-                """.format(image_to_base64(processed_logo_sidebar)), unsafe_allow_html=True)
-            
-            # 이름 작게 표시
-            st.markdown(f"<div style='text-align:center; font-size:0.8rem; margin-bottom:10px;'><b>{st.session_state['name']}</b></div>", unsafe_allow_html=True)
-            
-            menu_opts = ["본점", "작업장", "건의", "업무"]
-            menu_icons = ['house', 'tools', 'lightbulb', 'check-square']
-            if st.session_state['role'] == "Master":
-                menu_opts.insert(0, "관리")
-                menu_icons.insert(0, "people")
-            menu_opts.append("나가기")
-            menu_icons.append("box-arrow-right")
-            
-            # [수정] 메뉴 글씨 크기(12px) 및 패딩 조절로 좁은 사이드바에 맞춤
-            m = option_menu(None, menu_opts, icons=menu_icons, menu_icon="cast", default_index=0, 
-                            styles={
-                                "container": {"padding": "0!important", "background-color": "#FFF3E0"},
-                                "icon": {"color": "#4E342E", "font-size": "14px"}, 
-                                "nav-link": {"font-size": "12px", "text-align": "left", "margin":"0px", "--hover-color": "#eee", "padding": "10px 5px"},
-                                "nav-link-selected": {"background-color": "#8D6E63"},
-                            })
-            
-            if m=="나가기":
-                st.session_state.logged_in=False; cookies["auto_login"]="false"; cookies.save(); st.rerun()
+        # [상단 헤더 영역] 로고 및 환영 인사
+        processed_logo_header = get_processed_logo("logo.png", icon_size=(50, 50))
+        c1, c2 = st.columns([1, 6])
+        with c1:
+            if processed_logo_header:
+                st.image(processed_logo_header, width=50)
+        with c2:
+            st.markdown(f"<div style='padding-top:10px;'><b>{st.session_state['name']}</b>님, 오늘도 화이팅! 🥐</div>", unsafe_allow_html=True)
+
+        # [상단 가로 메뉴]
+        menu_opts = ["본점", "작업장", "건의", "업무"]
+        menu_icons = ['house', 'tools', 'lightbulb', 'check-square']
+        if st.session_state['role'] == "Master":
+            menu_opts.insert(0, "관리")
+            menu_icons.insert(0, "people")
+        menu_opts.append("나가기")
+        menu_icons.append("box-arrow-right")
+        
+        m = option_menu(None, menu_opts, icons=menu_icons, menu_icon="cast", default_index=0, 
+                        orientation="horizontal",
+                        styles={
+                            "container": {"padding": "0!important", "background-color": "#FFF3E0"},
+                            "icon": {"color": "#4E342E", "font-size": "14px"}, 
+                            "nav-link": {"font-size": "14px", "text-align": "center", "margin":"0px", "--hover-color": "#eee", "padding": "10px"},
+                            "nav-link-selected": {"background-color": "#8D6E63"},
+                        })
+        
+        if m=="나가기":
+            st.session_state.logged_in=False; cookies["auto_login"]="false"; cookies.save(); st.rerun()
 
         pt = get_pending_tasks_list()
         if st.session_state.get("show_popup_on_login", False):
