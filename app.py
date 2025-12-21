@@ -74,7 +74,6 @@ st.markdown("""
     }
     .stButton>button:hover { background-color: #6D4C41; color: #FFF8E1; }
     
-    /* 인폼노트 확인 버튼 (초록) */
     .confirm-btn > button { background-color: #2E7D32 !important; }
     .confirm-btn > button:hover { background-color: #1B5E20 !important; }
 
@@ -94,7 +93,7 @@ st.markdown("""
 # --- [쿠키 매니저] ---
 cookies = CookieManager()
 
-# --- [2. 구글 시트 연결] ---
+# --- [2. 구글 시트 연결 및 에러 방지 로직] ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 SHEET_NAMES = {
@@ -107,29 +106,37 @@ SHEET_NAMES = {
     "inform_logs": "inform_logs"
 }
 
-# [속도 개선] 데이터 읽을 때 캐시 사용 안 함 (실시간성 보장)
-@st.cache_data(ttl=0)
+# [핵심 수정 1] ttl=2 (2초 캐시) 적용하여 과도한 호출 방지
+@st.cache_data(ttl=2)
 def load_data(key):
-    try:
-        return conn.read(worksheet=SHEET_NAMES[key], ttl=0)
-    except Exception:
-        return pd.DataFrame()
+    # [핵심 수정 2] 읽기 실패 시 재시도 (Retry Logic)
+    max_retries = 3
+    for i in range(max_retries):
+        try:
+            return conn.read(worksheet=SHEET_NAMES[key], ttl=0)
+        except Exception as e:
+            if "429" in str(e) or "Quota exceeded" in str(e):
+                if i < max_retries - 1:
+                    time.sleep(2) # 2초 대기 후 재시도
+                    continue
+            return pd.DataFrame() # 최후의 경우 빈 데이터 반환하여 앱 멈춤 방지
+    return pd.DataFrame()
 
 def load(key): return load_data(key)
 
-# [안정성 개선] 저장 실패 시 재시도 로직 (동시 접속자 충돌 방지)
+# [핵심 수정 3] 저장 로직도 재시도 강화
 def save(key, df):
     max_retries = 3
     for i in range(max_retries):
         try:
             conn.update(worksheet=SHEET_NAMES[key], data=df)
-            load_data.clear()
+            load_data.clear() # 저장 성공 시 캐시 비우기 (바로 반영되도록)
             return True
         except Exception as e:
             if i == max_retries - 1:
-                st.error(f"저장 실패 (잠시 후 다시 시도해주세요): {e}")
+                st.error(f"저장 중 통신 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
                 return False
-            time.sleep(1)
+            time.sleep(2) # 2초 대기
 
 def hash_password(password):
     return hashlib.sha256(str(password).encode()).hexdigest()
@@ -152,7 +159,8 @@ def init_db():
                 "department": "전체"
             }])
             save("users", init_users)
-        # 시트 연결 확인용 로드
+        
+        # 앱 시작 시 한 번씩 로드 (연결 확인)
         for key in SHEET_NAMES:
             load(key)
     except: pass
@@ -298,24 +306,18 @@ def login_page():
                     st.success("신청 완료")
                 else: st.warning("빈칸 확인")
 
-# [인폼노트] 제목 삭제, 날짜 선택, 저장 로직 개선
 def page_inform():
     st.subheader("📢 인폼노트")
-    
-    # 조회 날짜 선택
     selected_date = st.date_input("📅 날짜 조회", value=date.today())
     selected_date_str = selected_date.strftime("%Y-%m-%d")
-    
     user_role = st.session_state['role']
     username = st.session_state['name']
     
-    # 글쓰기 (Master/Manager)
     if user_role in ["Master", "Manager"]:
         with st.expander("📝 인폼 작성"):
             with st.form("new_inform"):
                 target_date_input = st.date_input("업무 수행일", value=selected_date)
                 ic = st.text_area("전달 내용 (필수)", height=100)
-                
                 if st.form_submit_button("등록"):
                     if ic.strip() == "":
                         st.warning("내용을 입력해주세요.")
@@ -324,7 +326,6 @@ def page_inform():
                         nid = 1
                         if not df.empty and "id" in df.columns:
                             nid = pd.to_numeric(df["id"], errors='coerce').fillna(0).max() + 1
-                        
                         new_note = pd.DataFrame([{
                             "id": nid, 
                             "target_date": target_date_input.strftime("%Y-%m-%d"), 
@@ -332,14 +333,12 @@ def page_inform():
                             "author": username, 
                             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
                         }])
-                        
                         if df.empty: save("inform_notes", new_note)
                         else: save("inform_notes", pd.concat([df, new_note], ignore_index=True))
                         st.success("등록 완료")
                         time.sleep(1)
                         st.rerun()
 
-    # 조회
     notes = load("inform_notes")
     logs = load("inform_logs")
     cmts = load("comments")
@@ -354,10 +353,8 @@ def page_inform():
         st.info(f"{selected_date_str} 의 인폼이 없습니다.")
     else:
         daily_notes = daily_notes.sort_values("id", ascending=False)
-        
         for _, r in daily_notes.iterrows():
             note_id = str(r["id"])
-            
             with st.container():
                 st.markdown(f"""
                 <div style="border:1px solid #ddd; padding:15px; border-radius:10px; background-color:white; margin-bottom:10px;">
@@ -391,7 +388,6 @@ def page_inform():
                     if confirmed_users: st.write(", ".join(confirmed_users))
                     else: st.write("-")
                 
-                # 댓글
                 if not cmts.empty:
                     note_cmts = cmts[cmts["post_id"].astype(str) == f"inform_{note_id}"]
                     for _, c in note_cmts.iterrows():
