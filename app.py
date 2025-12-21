@@ -15,29 +15,38 @@ st.set_page_config(
     initial_sidebar_state="collapsed" 
 )
 
-# --- [1. 디자인 & CSS] ---
+# --- [1. 디자인 & CSS (화살표 복구)] ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
     html, body, [class*="css"]  { font-family: 'Noto Sans KR', sans-serif; color: #4E342E; }
     .stApp { background-color: #FFF3E0; }
     
-    /* 헤더 및 버튼 스타일 */
-    header { visibility: visible !important; background-color: transparent !important; }
+    /* 헤더 투명화 (내용은 가리되 공간은 유지) */
+    header { background-color: transparent !important; }
+    
+    /* 불필요한 상단 데코레이션 숨김 */
     [data-testid="stDecoration"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
-    [data-testid="stToolbar"] { display: none !important; }
     
-    /* 사이드바 화살표 버튼 (진한 갈색, 잘 보이게) */
+    /* [핵심] 사이드바 여는 화살표(>) 버튼 강제 소환 */
+    section[data-testid="stSidebar"] > div > div:nth-child(2) {
+        display: none; /* X버튼 숨김 방지 */
+    }
+    
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important;
         visibility: visible !important;
-        color: #4E342E !important;
-        background-color: rgba(255, 255, 255, 0.5) !important;
-        border-radius: 5px;
-        z-index: 999999 !important;
+        color: #4E342E !important; /* 진한 갈색 아이콘 */
+        background-color: rgba(255, 255, 255, 0.5) !important; /* 반투명 흰색 배경 */
+        border-radius: 8px;
+        padding: 5px;
+        z-index: 1000002 !important; /* 맨 앞으로 가져오기 */
+        top: 10px !important;
+        left: 10px !important;
     }
     
+    /* 모바일 여백 조정 */
     .block-container { padding-top: 50px !important; }
     
     /* 버튼 스타일 */
@@ -50,7 +59,7 @@ st.markdown("""
     /* 댓글 및 박스 스타일 */
     .comment-box { background-color: #F5F5F5; padding: 10px; border-radius: 8px; margin-top: 5px; font-size: 0.9rem; }
     
-    /* 알림 스타일 (Expander 헤더를 붉게 강조) */
+    /* 알림창(Expander) 스타일 */
     .streamlit-expanderHeader {
         background-color: #FFEBEE !important;
         color: #C62828 !important;
@@ -61,14 +70,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- [쿠키 매니저 초기화 (수정됨)] ---
+# --- [쿠키 매니저] ---
 cookies = CookieManager()
-# 주의: 모바일에서 cookies.ready()가 False일 때 st.stop()을 걸면 무한 로딩(흰 화면)에 걸립니다.
-# 따라서 st.stop()을 주석 처리하여 일단 화면이 뜨게 합니다.
-# if not cookies.ready():
-#     st.stop()
+# 모바일 흰 화면 방지용 주석 처리
+# if not cookies.ready(): st.stop()
 
-# --- [2. 구글 시트 데이터 관리] ---
+# --- [2. 구글 시트 연결] ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 SHEET_NAMES = {
@@ -82,23 +89,19 @@ SHEET_NAMES = {
 @st.cache_data(ttl=60)
 def load_data(key):
     try:
-        # 캐시 갱신을 위해 ttl=0 옵션 사용
         return conn.read(worksheet=SHEET_NAMES[key], ttl=0)
     except Exception:
         return pd.DataFrame()
 
-def load(key):
-    return load_data(key)
+def load(key): return load_data(key)
 
 def save(key, df):
     try:
         conn.update(worksheet=SHEET_NAMES[key], data=df)
         load_data.clear()
     except Exception as e:
-        if "429" in str(e):
-            st.error("⚠️ 잠시 대기! 구글 시트 사용량이 많습니다. 1분 뒤 다시 시도해주세요.")
-        else:
-            st.error(f"저장 실패: {e}")
+        if "429" in str(e): st.error("⚠️ 구글 연결량 초과. 1분 뒤 시도해주세요.")
+        else: st.error(f"저장 실패: {e}")
 
 def hash_password(password):
     return hashlib.sha256(str(password).encode()).hexdigest()
@@ -112,18 +115,17 @@ def init_db():
             save("users", init_users)
         load("posts")
         load("routine_def")
-    except:
-        pass
+    except: pass
 
 init_db()
 
-# --- [3. 로직 함수들] ---
+# --- [3. 로직 함수] ---
 def is_task_due(start_date_str, cycle_type, interval_val):
     try:
         if pd.isna(start_date_str) or str(start_date_str).strip() == "": return False
         try: start_date = datetime.strptime(str(start_date_str), "%Y-%m-%d").date()
         except: return False
-
+        
         today = date.today()
         if today < start_date: return False
         delta_days = (today - start_date).days
@@ -141,7 +143,7 @@ def get_pending_tasks_list():
     if defs.empty: return []
 
     today_str = date.today().strftime("%Y-%m-%d")
-    pending_tasks = []
+    pending = []
     
     for _, task in defs.iterrows():
         if is_task_due(task.get("start_date"), task.get("cycle_type"), task.get("interval_val", 1)):
@@ -149,262 +151,199 @@ def get_pending_tasks_list():
             if not logs.empty:
                 done = logs[(logs["task_id"].astype(str) == str(task["id"])) & (logs["done_date"] == today_str)]
                 if not done.empty: is_done = True
-            
-            if not is_done:
-                pending_tasks.append(task)
-                
-    return pending_tasks
+            if not is_done: pending.append(task)
+    return pending
 
-# --- [4. 페이지 구성] ---
-
+# --- [4. 화면 구성] ---
 def login_page():
     st.markdown("<br><h1 style='text-align:center;'>🥐 조각달 업무수첩</h1>", unsafe_allow_html=True)
     
-    # 자동 로그인 시도
-    # (모바일에서 쿠키가 늦게 로드되더라도, 다음 리런 때 처리됩니다)
     try:
         if cookies.get("auto_login") == "true":
-            saved_id = cookies.get("uid")
-            saved_pw_hash = cookies.get("upw")
-            if saved_id and saved_pw_hash:
+            sid, spw = cookies.get("uid"), cookies.get("upw")
+            if sid and spw:
                 users = load("users")
                 if not users.empty:
                     users["username"] = users["username"].astype(str)
                     users["password"] = users["password"].astype(str)
-                    user = users[(users["username"] == saved_id) & (users["password"] == saved_pw_hash)]
-                    if not user.empty:
-                        st.session_state.update({"logged_in": True, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
-                        st.session_state["show_login_alert"] = True
+                    u = users[(users["username"] == sid) & (users["password"] == spw)]
+                    if not u.empty:
+                        st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"], "show_login_alert": True})
                         st.rerun()
-    except Exception:
-        pass # 쿠키 로드 에러 무시
+    except: pass
 
     tab1, tab2 = st.tabs(["로그인", "회원가입"])
-    
     with tab1:
         with st.form("login"):
             uid = st.text_input("아이디")
             upw = st.text_input("비밀번호", type="password")
-            auto_login = st.checkbox("자동 로그인")
-            
+            auto = st.checkbox("자동 로그인")
             if st.form_submit_button("입장"):
                 users = load("users")
-                hashed_pw = hash_password(upw)
+                hpw = hash_password(upw)
                 if not users.empty:
                     users["username"] = users["username"].astype(str)
                     users["password"] = users["password"].astype(str)
-                    user = users[(users["username"] == uid) & (users["password"] == hashed_pw)]
-                    if not user.empty:
-                        st.session_state.update({"logged_in": True, "name": user.iloc[0]["name"], "role": user.iloc[0]["role"]})
-                        st.session_state["show_login_alert"] = True
-                        
-                        # 쿠키 저장
-                        if auto_login:
+                    u = users[(users["username"] == uid) & (users["password"] == hpw)]
+                    if not u.empty:
+                        st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"], "show_login_alert": True})
+                        if auto:
                             cookies["auto_login"] = "true"
                             cookies["uid"] = uid
-                            cookies["upw"] = hashed_pw
+                            cookies["upw"] = hpw
                             cookies.save()
                         else:
-                            if cookies.get("auto_login"):
-                                cookies["auto_login"] = "false"
-                                cookies.save()
+                            if cookies.get("auto_login"): cookies["auto_login"] = "false"; cookies.save()
                         st.rerun()
-                    else: st.error("아이디 또는 비밀번호 오류")
-                else: st.error("사용자 DB 오류")
-
+                    else: st.error("아이디/비번 확인")
+                else: st.error("DB 오류")
+    
     with tab2:
         with st.form("signup"):
             nid = st.text_input("희망 아이디")
             npw = st.text_input("희망 비밀번호", type="password")
-            nname = st.text_input("이름 (실명)")
-            if st.form_submit_button("가입 신청"):
+            nname = st.text_input("이름")
+            if st.form_submit_button("가입"):
                 users = load("users")
-                if not users.empty and nid in users["username"].values: 
-                    st.warning("이미 있는 아이디입니다.")
+                if not users.empty and nid in users["username"].values: st.warning("중복 ID")
                 elif nid and npw and nname:
-                    new_user = pd.DataFrame([{"username": nid, "password": hash_password(npw), "name": nname, "role": "Staff"}])
-                    if users.empty: save("users", new_user)
-                    else: save("users", pd.concat([users, new_user], ignore_index=True))
-                    st.success("가입 완료! 로그인 해주세요.")
+                    new_u = pd.DataFrame([{"username": nid, "password": hash_password(npw), "name": nname, "role": "Staff"}])
+                    if users.empty: save("users", new_u)
+                    else: save("users", pd.concat([users, new_u], ignore_index=True))
+                    st.success("가입 완료")
 
-def page_board(board_name, icon):
-    st.header(f"{icon} {board_name} 게시판")
-    
+def page_board(b_name, icon):
+    st.header(f"{icon} {b_name} 게시판")
     with st.expander("✏️ 글 쓰기"):
-        with st.form(f"write_{board_name}"):
-            title = st.text_input("제목")
-            content = st.text_area("내용")
+        with st.form(f"w_{b_name}"):
+            tt = st.text_input("제목")
+            ct = st.text_area("내용")
             if st.form_submit_button("등록"):
                 df = load("posts")
-                new_id = 1
-                if not df.empty and "id" in df.columns: 
-                    new_id = pd.to_numeric(df["id"], errors='coerce').fillna(0).max() + 1
-                
-                new_post = pd.DataFrame([{"id": new_id, "board_type": board_name, "title": title, "content": content, "author": st.session_state["name"], "date": datetime.now().strftime("%Y-%m-%d")}])
-                
-                if df.empty: save("posts", new_post)
-                else: save("posts", pd.concat([df, new_post], ignore_index=True))
+                nid = 1
+                if not df.empty and "id" in df.columns: nid = pd.to_numeric(df["id"], errors='coerce').fillna(0).max() + 1
+                np = pd.DataFrame([{"id": nid, "board_type": b_name, "title": tt, "content": ct, "author": st.session_state["name"], "date": datetime.now().strftime("%Y-%m-%d")}])
+                if df.empty: save("posts", np)
+                else: save("posts", pd.concat([df, np], ignore_index=True))
                 st.rerun()
-
-    posts = load("posts")
-    comments = load("comments")
     
-    if posts.empty:
-        st.info("게시글이 없습니다.")
+    posts = load("posts")
+    cmts = load("comments")
+    if posts.empty: st.info("글이 없습니다.")
     else:
         if "board_type" in posts.columns:
-            my_posts = posts[posts["board_type"].astype(str).str.strip() == board_name]
-            
-            if my_posts.empty:
-                st.info("게시글이 없습니다.")
+            mp = posts[posts["board_type"].astype(str).str.strip() == b_name]
+            if mp.empty: st.info("글이 없습니다.")
             else:
-                my_posts = my_posts.sort_values("id", ascending=False)
-                for _, row in my_posts.iterrows():
-                    # 제목 클릭 시 펼쳐지게 함
-                    expander_label = f"{row['title']}   (✍️ {row['author']} | 📅 {row['date']})"
-                    
-                    with st.expander(expander_label):
-                        st.markdown(f"**내용:**")
-                        st.write(row['content'])
+                mp = mp.sort_values("id", ascending=False)
+                for _, r in mp.iterrows():
+                    lbl = f"{r['title']}   (✍️ {r['author']} | 📅 {r['date']})"
+                    with st.expander(lbl):
+                        st.write(r['content'])
                         st.markdown("---")
-                        if not comments.empty:
-                            post_comments = comments[comments["post_id"].astype(str) == str(row["id"])]
-                            for _, c in post_comments.iterrows():
-                                st.markdown(f"<div class='comment-box'><b>{c['author']}</b>: {c['content']} <span style='color:#aaa; font-size:0.8em;'>({c['date']})</span></div>", unsafe_allow_html=True)
-                        
-                        with st.form(f"comment_{row['id']}"):
-                            c1, c2 = st.columns([4, 1])
-                            c_txt = c1.text_input("댓글", label_visibility="collapsed", placeholder="댓글 달기")
-                            if c2.form_submit_button("전송"):
-                                new_comment = pd.DataFrame([{"post_id": row["id"], "author": st.session_state["name"], "content": c_txt, "date": datetime.now().strftime("%m-%d %H:%M")}])
-                                if comments.empty: save("comments", new_comment)
-                                else: save("comments", pd.concat([comments, new_comment], ignore_index=True))
+                        if not cmts.empty:
+                            pcmts = cmts[cmts["post_id"].astype(str) == str(r["id"])]
+                            for _, c in pcmts.iterrows():
+                                st.markdown(f"<div class='comment-box'><b>{c['author']}</b>: {c['content']} <span style='color:#aaa;Size:0.8em;'>({c['date']})</span></div>", unsafe_allow_html=True)
+                        with st.form(f"c_{r['id']}"):
+                            c1, c2 = st.columns([4,1])
+                            ctxt = c1.text_input("댓글", label_visibility="collapsed")
+                            if c2.form_submit_button("등록"):
+                                nc = pd.DataFrame([{"post_id": r["id"], "author": st.session_state["name"], "content": ctxt, "date": datetime.now().strftime("%m-%d %H:%M")}])
+                                if cmts.empty: save("comments", nc)
+                                else: save("comments", pd.concat([cmts, nc], ignore_index=True))
                                 st.rerun()
-        else:
-            st.error("데이터 오류: board_type 컬럼 누락")
 
 def page_routine():
-    st.header("🔄 반복 업무 관리")
-    
+    st.header("🔄 반복 업무")
     defs = load("routine_def")
     logs = load("routine_log")
     if not defs.empty and "id" not in defs.columns: defs["id"] = range(1, len(defs)+1)
-    today_str = date.today().strftime("%Y-%m-%d")
-
-    tab_list, tab_log = st.tabs(["📝 오늘의 업무", "📜 업무 기록"])
-
-    with tab_list:
+    today = date.today().strftime("%Y-%m-%d")
+    
+    t1, t2 = st.tabs(["오늘의 업무", "기록"])
+    with t1:
         if st.session_state["role"] in ["Manager", "관리자"]:
-            with st.expander("⚙️ 업무 추가/삭제 (관리자)"):
-                with st.form("add_routine"):
-                    c1, c2 = st.columns(2)
-                    r_name = c1.text_input("업무명")
-                    r_start = c2.date_input("시작일", date.today())
-                    c3, c4 = st.columns(2)
-                    r_cycle = c3.selectbox("주기", ["매일", "매주", "매월", "N일 간격"])
-                    r_interval = 1
-                    if r_cycle == "N일 간격": r_interval = c4.number_input("간격", 1, 365, 3)
-                    
+            with st.expander("⚙️ 설정 (관리자)"):
+                with st.form("new_r"):
+                    c1,c2 = st.columns(2)
+                    rn = c1.text_input("업무명")
+                    rs = c2.date_input("시작일")
+                    c3,c4 = st.columns(2)
+                    rc = c3.selectbox("주기", ["매일","매주","매월","N일 간격"])
+                    ri = 1
+                    if rc=="N일 간격": ri = c4.number_input("간격",1,365,3)
                     if st.form_submit_button("추가"):
-                        new_id = 1
-                        if not defs.empty: new_id = pd.to_numeric(defs["id"], errors='coerce').fillna(0).max() + 1
-                        new_row = pd.DataFrame([{
-                            "id": new_id, "task_name": r_name, "start_date": r_start.strftime("%Y-%m-%d"), 
-                            "cycle_type": r_cycle, "interval_val": r_interval
-                        }])
-                        if defs.empty: save("routine_def", new_row)
-                        else: save("routine_def", pd.concat([defs, new_row], ignore_index=True))
-                        st.success("완료")
+                        nid = 1
+                        if not defs.empty: nid = pd.to_numeric(defs["id"], errors='coerce').fillna(0).max()+1
+                        nr = pd.DataFrame([{"id": nid, "task_name": rn, "start_date": rs.strftime("%Y-%m-%d"), "cycle_type": rc, "interval_val": ri}])
+                        if defs.empty: save("routine_def", nr)
+                        else: save("routine_def", pd.concat([defs, nr], ignore_index=True))
                         st.rerun()
                 if not defs.empty:
                     for _, r in defs.iterrows():
                         c1, c2 = st.columns([4,1])
-                        c1.text(f"• {r['task_name']} ({r['cycle_type']})")
-                        if c2.button("삭제", key=f"del_{r['id']}"):
-                            save("routine_def", defs[defs["id"] != r['id']])
+                        c1.text(f"• {r['task_name']}")
+                        if c2.button("삭제", key=f"d_{r['id']}"):
+                            save("routine_def", defs[defs["id"]!=r['id']])
                             st.rerun()
         st.divider()
-        
-        # 일반 목록 표시 (배너는 main함수에서 처리)
-        pending_tasks = get_pending_tasks_list()
-        
-        if not pending_tasks:
-            st.info("오늘 예정된 업무가 없습니다.")
+        ptasks = get_pending_tasks_list()
+        if not ptasks: st.info("할 일 없음")
         else:
-            for task in pending_tasks:
+            for t in ptasks:
                 with st.container():
-                    st.markdown(f"""<div style="padding:15px; border-radius:10px; border:1px solid #FFCDD2; background-color:#FFEBEE; margin-bottom:10px;"><h4 style="margin:0;">{task['task_name']}</h4></div>""", unsafe_allow_html=True)
-                    c1, c2 = st.columns([1,4])
-                    if st.button("완료하기", key=f"do_main_{task['id']}"):
-                        new_log = pd.DataFrame([{"task_id": task["id"], "done_date": today_str, "worker": st.session_state["name"], "created_at": datetime.now().strftime("%H:%M")}])
-                        if logs.empty: save("routine_log", new_log)
-                        else: save("routine_log", pd.concat([logs, new_log], ignore_index=True))
+                    st.markdown(f"<div style='padding:10px; border:1px solid #FFCDD2; background:#FFEBEE; border-radius:10px; margin-bottom:5px;'><b>{t['task_name']}</b></div>", unsafe_allow_html=True)
+                    if st.button("완료", key=f"do_{t['id']}"):
+                        nl = pd.DataFrame([{"task_id": t["id"], "done_date": today, "worker": st.session_state["name"], "created_at": datetime.now().strftime("%H:%M")}])
+                        if logs.empty: save("routine_log", nl)
+                        else: save("routine_log", pd.concat([logs, nl], ignore_index=True))
                         st.rerun()
-
-    with tab_log:
+    with t2:
         if logs.empty: st.info("기록 없음")
         else:
             if not defs.empty:
                 logs["task_id"] = logs["task_id"].astype(str)
                 defs["id"] = defs["id"].astype(str)
-                merged = pd.merge(logs, defs, left_on="task_id", right_on="id", how="left")
-                merged = merged.sort_values(["done_date", "created_at"], ascending=False)
-                st.dataframe(merged[["done_date", "created_at", "task_name", "worker"]], use_container_width=True, hide_index=True)
+                m = pd.merge(logs, defs, left_on="task_id", right_on="id", how="left")
+                m = m.sort_values(["done_date", "created_at"], ascending=False)
+                st.dataframe(m[["done_date", "task_name", "worker"]], use_container_width=True, hide_index=True)
 
-# --- [5. 메인 실행] ---
 def main():
     if "logged_in" not in st.session_state: st.session_state.logged_in = False
-    
-    if not st.session_state.logged_in:
-        login_page()
+    if not st.session_state.logged_in: login_page()
     else:
         with st.sidebar:
             st.title("🥐 조각달")
             st.write(f"**{st.session_state['name']}**님")
-            menu = option_menu("메뉴", ["🏠 본점 공지", "🏭 작업장 공지", "🔄 반복 업무", "로그아웃"],
-                icons=['house', 'tools', 'repeat', 'box-arrow-right'],
-                menu_icon="cast", default_index=0,
-                styles={"container": {"background-color": "#FFF3E0"}, "nav-link-selected": {"background-color": "#8D6E63"}})
-            
-            if menu == "로그아웃":
-                st.session_state.logged_in = False
-                cookies["auto_login"] = "false"
+            m = option_menu("메뉴", ["본점 공지", "작업장 공지", "반복 업무", "로그아웃"], icons=['house','tools','repeat','box-arrow-right'], menu_icon="cast", default_index=0, styles={"container": {"background-color": "#FFF3E0"}, "nav-link-selected": {"background-color": "#8D6E63"}})
+            if m=="로그아웃":
+                st.session_state.logged_in=False
+                cookies["auto_login"]="false"
                 cookies.save()
                 st.rerun()
-
-        # [미완료 업무 배너 로직]
-        pending = get_pending_tasks_list()
         
-        # 1. 로그인 직후 토스트 알림
+        pt = get_pending_tasks_list()
         if st.session_state.get("show_login_alert", False):
-            if pending: st.toast(f"할 일 {len(pending)}건!", icon="🚨"); time.sleep(1)
+            if pt: st.toast(f"할 일 {len(pt)}건!", icon="🚨"); time.sleep(1)
             st.session_state["show_login_alert"] = False
-
-        # 2. 클릭 가능한 배너 (Expander 활용)
-        if pending:
-            label = f"🚨 [긴급] 오늘 미완료 업무가 {len(pending)}건 있습니다! (눌러서 처리)"
-            with st.expander(label, expanded=False):
-                st.markdown("아래 버튼을 누르면 즉시 완료 처리됩니다.")
-                for task in pending:
-                    col1, col2 = st.columns([4, 1])
-                    col1.markdown(f"**• {task['task_name']}**")
-                    # 버튼 누르면 바로 저장하고 리로드
-                    if col2.button("완료", key=f"banner_btn_{task['id']}"):
-                        today_str = date.today().strftime("%Y-%m-%d")
-                        new_log = pd.DataFrame([{
-                            "task_id": task["id"], 
-                            "done_date": today_str, 
-                            "worker": st.session_state["name"], 
-                            "created_at": datetime.now().strftime("%H:%M")
-                        }])
-                        logs = load("routine_log")
-                        if logs.empty: save("routine_log", new_log)
-                        else: save("routine_log", pd.concat([logs, new_log], ignore_index=True))
+        
+        if pt:
+            lbl = f"🚨 미완료 {len(pt)}건! (클릭해서 처리)"
+            with st.expander(lbl):
+                for t in pt:
+                    c1, c2 = st.columns([4,1])
+                    c1.markdown(f"**{t['task_name']}**")
+                    if c2.button("완료", key=f"ban_{t['id']}"):
+                        nl = pd.DataFrame([{"task_id": t["id"], "done_date": date.today().strftime("%Y-%m-%d"), "worker": st.session_state["name"], "created_at": datetime.now().strftime("%H:%M")}])
+                        l = load("routine_log")
+                        if l.empty: save("routine_log", nl)
+                        else: save("routine_log", pd.concat([l, nl], ignore_index=True))
                         st.rerun()
 
-        if menu == "🏠 본점 공지": page_board("본점", "🏠")
-        elif menu == "🏭 작업장 공지": page_board("작업장", "🏭")
-        elif menu == "🔄 반복 업무": page_routine()
+        if m=="본점 공지": page_board("본점", "🏠")
+        elif m=="작업장 공지": page_board("작업장", "🏭")
+        elif m=="반복 업무": page_routine()
 
 if __name__ == "__main__":
     main()
