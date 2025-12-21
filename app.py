@@ -10,13 +10,13 @@ from streamlit_gsheets import GSheetsConnection
 from streamlit_cookies_manager import CookieManager
 from PIL import Image
 
-# --- [이미지 base64 인코딩 함수 (미리 선언)] ---
+# --- [이미지 base64 인코딩 함수] ---
 def image_to_base64(img):
     buffered = io.BytesIO()
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode()
 
-# --- [이미지 처리 함수 (미리 선언)] ---
+# --- [이미지 처리 함수] ---
 @st.cache_data
 def get_processed_logo(image_path, icon_size=(40, 40)):
     try:
@@ -32,19 +32,18 @@ def get_processed_logo(image_path, icon_size=(40, 40)):
         img = img.resize(icon_size, Image.LANCZOS)
         return img
     except Exception as e:
-        # st.error(f"로고 처리 중 오류 발생: {e}") # 초기화 중 에러 표시 방지
         return None
 
-# --- [0. 기본 설정 & 아이콘 강제 적용] ---
+# --- [0. 기본 설정 (여기가 수정되었습니다!)] ---
 st.set_page_config(
     page_title="조각달과자점 파트너", 
-    page_icon="🥐", 
+    page_icon="logo.png",  # [핵심 수정] 🥐 이모지를 지우고 'logo.png' 파일명을 넣었습니다!
     layout="wide", 
     initial_sidebar_state="collapsed" 
 )
 
-# [핵심] 홈 화면 아이콘 강제 설정을 위한 HTML 태그 삽입
-processed_icon = get_processed_logo("logo.png", icon_size=(192, 192)) # 고해상도 아이콘 준비
+# [홈 화면 아이콘 강제 적용 태그]
+processed_icon = get_processed_logo("logo.png", icon_size=(192, 192))
 if processed_icon:
     icon_base64 = image_to_base64(processed_icon)
     st.markdown(
@@ -52,7 +51,7 @@ if processed_icon:
         <head>
             <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,{icon_base64}">
             <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,{icon_base64}">
-            <link rel="icon" type="image/png" sizes="16x16" href="data:image/png;base64,{icon_base64}">
+            <link rel="icon" type="image/png" sizes="192x192" href="data:image/png;base64,{icon_base64}">
         </head>
         """,
         unsafe_allow_html=True
