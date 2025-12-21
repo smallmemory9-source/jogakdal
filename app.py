@@ -66,10 +66,8 @@ st.markdown("""
     [data-testid="stDecoration"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
     
-    /* 상단 메뉴바 선택 색상 */
-    .nav-link-selected {
-        background-color: #8D6E63 !important;
-    }
+    /* 메뉴바 스타일 */
+    .nav-link-selected { background-color: #8D6E63 !important; }
     
     .stButton>button {
         background-color: #8D6E63; color: white; border-radius: 12px; border: none;
@@ -77,6 +75,14 @@ st.markdown("""
     }
     .stButton>button:hover { background-color: #6D4C41; color: #FFF8E1; }
     
+    /* 관리 페이지 수정 버튼 스타일 (파란색 계열) */
+    .update-btn > button { background-color: #1E88E5 !important; }
+    .update-btn > button:hover { background-color: #1565C0 !important; }
+
+    /* 관리 페이지 삭제 버튼 스타일 (빨간색 계열) */
+    .delete-btn > button { background-color: #E53935 !important; }
+    .delete-btn > button:hover { background-color: #C62828 !important; }
+
     .comment-box { background-color: #F5F5F5; padding: 10px; border-radius: 8px; margin-top: 5px; font-size: 0.9rem; }
     
     .logo-title-container {
@@ -84,11 +90,7 @@ st.markdown("""
     }
     .logo-title-container h1 { margin: 0 0 0 10px; font-size: 1.8rem; }
     
-    /* 모바일용 메뉴바 패딩 제거 */
-    .container-xxl {
-        padding-left: 0.5rem !important;
-        padding-right: 0.5rem !important;
-    }
+    .container-xxl { padding-left: 0.5rem !important; padding-right: 0.5rem !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -120,7 +122,7 @@ def save(key, df):
         conn.update(worksheet=SHEET_NAMES[key], data=df)
         load_data.clear()
     except Exception as e:
-        if "429" in str(e): st.error("⚠️ 구글 연결량 초과. 1분 뒤 시도해주세요.")
+        if "429" in str(e): st.error("⚠️ 구글 연결량 초과. 잠시 후 시도.")
         else: st.error(f"저장 실패: {e}")
 
 def hash_password(password):
@@ -133,6 +135,7 @@ def check_approved(val):
 def init_db():
     try:
         users = load("users")
+        # 초기 DB 생성 시 'department' 컬럼 추가
         if users.empty or "username" not in users.columns:
             admin_pw = hash_password("1234")
             init_users = pd.DataFrame([{
@@ -140,7 +143,8 @@ def init_db():
                 "password": admin_pw, 
                 "name": "사장님", 
                 "role": "Master",
-                "approved": "True" 
+                "approved": "True",
+                "department": "전체" # 기본값
             }])
             save("users", init_users)
         load("posts")
@@ -224,7 +228,14 @@ def login_page():
                     u = users[(users["username"] == uid) & (users["password"] == hpw)]
                     if not u.empty:
                         if check_approved(u.iloc[0].get("approved", "False")):
-                            st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"]})
+                            # 부서(department) 정보도 세션에 저장
+                            dept = u.iloc[0].get("department", "전체")
+                            st.session_state.update({
+                                "logged_in": True, 
+                                "name": u.iloc[0]["name"], 
+                                "role": u.iloc[0]["role"],
+                                "department": dept
+                            })
                             st.session_state["show_popup_on_login"] = True 
                             
                             if auto:
@@ -248,6 +259,9 @@ def login_page():
             new_id = st.text_input("희망 아이디")
             new_pw = st.text_input("희망 비밀번호", type="password")
             new_name = st.text_input("이름")
+            # [추가] 근무지 선택
+            new_dept = st.selectbox("주 근무지", ["전체", "본점", "작업장"])
+            
             if st.form_submit_button("가입 신청"):
                 users = load("users")
                 if not users.empty and new_id in users["username"].values:
@@ -255,7 +269,8 @@ def login_page():
                 elif new_id and new_pw and new_name:
                     new_user = pd.DataFrame([{
                         "username": new_id, "password": hash_password(new_pw), 
-                        "name": new_name, "role": "Staff", "approved": "False"
+                        "name": new_name, "role": "Staff", "approved": "False",
+                        "department": new_dept
                     }])
                     if users.empty: save("users", new_user)
                     else: save("users", pd.concat([users, new_user], ignore_index=True))
@@ -267,34 +282,65 @@ def page_staff_mgmt():
     users = load("users")
     if users.empty: return
     if "approved" not in users.columns: users["approved"] = "False"
+    if "department" not in users.columns: users["department"] = "전체" # 컬럼 없을 시 기본값
+    
     users["is_approved_bool"] = users["approved"].apply(check_approved)
     
+    # 1. 승인 대기 목록
     pending = users[users["is_approved_bool"] == False]
     if not pending.empty:
         st.info(f"승인 대기: {len(pending)}명")
         for _, r in pending.iterrows():
-            c1,c2,c3 = st.columns([2,1,1])
-            c1.write(f"{r['name']} ({r['username']})")
-            if c2.button("수락", key=f"ok_{r['username']}"):
-                users.loc[users["username"]==r["username"], "approved"]="True"
-                if "is_approved_bool" in users.columns: del users["is_approved_bool"]
-                save("users", users); st.rerun()
-            if c3.button("거절", key=f"no_{r['username']}"):
-                users=users[users["username"]!=r["username"]]
-                if "is_approved_bool" in users.columns: del users["is_approved_bool"]
-                save("users", users); st.rerun()
-    
-    st.divider()
-    active = users[users["is_approved_bool"] == True]
-    if not active.empty:
-        for _, r in active.iterrows():
-            c1,c2 = st.columns([3,1])
-            c1.write(f"**{r['name']}** ({r['role']})")
-            if r['username'] != "admin" and r['username'] != st.session_state['name']:
-                if c2.button("삭제", key=f"del_{r['username']}"):
+            with st.expander(f"⏳ {r['name']} (가입 요청)"):
+                st.write(f"아이디: {r['username']}")
+                st.write(f"근무지: {r['department']}")
+                c1, c2 = st.columns(2)
+                if c1.button("수락", key=f"ok_{r['username']}"):
+                    users.loc[users["username"]==r["username"], "approved"]="True"
+                    if "is_approved_bool" in users.columns: del users["is_approved_bool"]
+                    save("users", users); st.rerun()
+                if c2.button("거절", key=f"no_{r['username']}"):
                     users=users[users["username"]!=r["username"]]
                     if "is_approved_bool" in users.columns: del users["is_approved_bool"]
                     save("users", users); st.rerun()
+    
+    st.divider()
+    
+    # 2. 정식 직원 목록 (수정/삭제 기능)
+    active = users[users["is_approved_bool"] == True]
+    if not active.empty:
+        st.write("✅ 직원 목록 (직급/근무지 변경 가능)")
+        for i, r in active.iterrows():
+            # 본인(admin 포함)은 수정/삭제 불가
+            if r['username'] == st.session_state['name'] or r['username'] == "admin":
+                continue
+                
+            with st.expander(f"👤 {r['name']} ({r['role']} / {r['department']})"):
+                with st.form(key=f"edit_user_{r['username']}"):
+                    c1, c2 = st.columns(2)
+                    new_role = c1.selectbox("직급", ["Staff", "Manager", "Master"], index=["Staff", "Manager", "Master"].index(r['role']))
+                    new_dept = c2.selectbox("근무지", ["전체", "본점", "작업장"], index=["전체", "본점", "작업장"].index(r.get('department', '전체')))
+                    
+                    c3, c4 = st.columns(2)
+                    update_click = c3.form_submit_button("정보 수정", type="primary") # 파란색
+                    delete_click = c4.form_submit_button("직원 삭제", type="secondary") # 빨간색 느낌(CSS로 처리)
+
+                    if update_click:
+                        users.loc[users["username"]==r["username"], "role"] = new_role
+                        users.loc[users["username"]==r["username"], "department"] = new_dept
+                        if "is_approved_bool" in users.columns: del users["is_approved_bool"]
+                        save("users", users)
+                        st.success("수정 완료")
+                        time.sleep(0.5)
+                        st.rerun()
+                    
+                    if delete_click:
+                        users = users[users["username"] != r["username"]]
+                        if "is_approved_bool" in users.columns: del users["is_approved_bool"]
+                        save("users", users)
+                        st.warning("삭제 완료")
+                        time.sleep(0.5)
+                        st.rerun()
 
 def page_board(b_name, icon):
     st.subheader(f"{icon} {b_name}")
@@ -399,35 +445,60 @@ def main():
                         users["password"] = users["password"].astype(str)
                         u = users[(users["username"] == sid) & (users["password"] == spw)]
                         if not u.empty and check_approved(u.iloc[0].get("approved", "False")):
-                            st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"]})
+                            # 자동 로그인 시에도 부서 정보 로드
+                            dept = u.iloc[0].get("department", "전체")
+                            st.session_state.update({
+                                "logged_in": True, 
+                                "name": u.iloc[0]["name"], 
+                                "role": u.iloc[0]["role"],
+                                "department": dept
+                            })
                             cookies.save()
         except: pass
 
     if not st.session_state.logged_in:
         login_page()
     else:
-        # [상단 헤더 영역]
+        # [상단 헤더]
         processed_logo_header = get_processed_logo("logo.png", icon_size=(50, 50))
         c1, c2 = st.columns([1, 6])
         with c1:
             if processed_logo_header:
                 st.image(processed_logo_header, width=50)
         with c2:
-            st.markdown(f"<div style='padding-top:10px;'><b>{st.session_state['name']}</b>님, 오늘도 화이팅! 🥐</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='padding-top:10px;'><b>{st.session_state['name']}</b>님 ({st.session_state.get('department','전체')})</div>", unsafe_allow_html=True)
 
-        # [상단 메뉴바 최적화]
-        menu_opts = ["본점", "작업장", "건의", "업무"]
-        menu_icons = ['house', 'tools', 'lightbulb', 'check-square']
+        # [메뉴 동적 생성 로직]
+        menu_opts = []
+        menu_icons = []
+        
+        user_dept = st.session_state.get('department', '전체')
+        
+        # 1. 본점 공지: '본점' 또는 '전체'인 사람만 보임
+        if user_dept in ['전체', '본점']:
+            menu_opts.append("본점")
+            menu_icons.append("house")
+            
+        # 2. 작업장 공지: '작업장' 또는 '전체'인 사람만 보임
+        if user_dept in ['전체', '작업장']:
+            menu_opts.append("작업장")
+            menu_icons.append("tools")
+            
+        # 3. 공통 메뉴
+        menu_opts.extend(["건의", "업무"])
+        menu_icons.extend(["lightbulb", "check-square"])
+        
+        # 4. 관리자 메뉴
         if st.session_state['role'] == "Master":
             menu_opts.insert(0, "관리")
             menu_icons.insert(0, "people")
+            
         menu_opts.append("나가기")
         menu_icons.append("box-arrow-right")
         
         m = option_menu(None, menu_opts, icons=menu_icons, menu_icon="cast", default_index=0, 
                         orientation="horizontal",
                         styles={
-                            # [핵심 수정] 패딩 제거, 글자 크기 축소 (12px), 좌우 여백 최소화
                             "container": {"padding": "0!important", "background-color": "#FFF3E0", "margin": "0"},
                             "icon": {"color": "#4E342E", "font-size": "14px"}, 
                             "nav-link": {"font-size": "12px", "text-align": "center", "margin":"0px", "--hover-color": "#eee", "padding": "5px 2px"},
