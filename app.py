@@ -8,7 +8,7 @@ from datetime import datetime, date
 from streamlit_option_menu import option_menu
 from streamlit_gsheets import GSheetsConnection
 from streamlit_cookies_manager import CookieManager
-from PIL import Image # 이미지 처리를 위한 필수 도구
+from PIL import Image
 
 # --- [0. 기본 설정] ---
 st.set_page_config(
@@ -80,11 +80,6 @@ st.markdown("""
         align-items: center;
         margin-bottom: 10px;
     }
-    /* 사이드바에서 글씨를 제거했으므로 h1 스타일은 필요 없어졌습니다. */
-    /* .sidebar-logo-container h1 {
-        margin: 0 0 0 10px;
-        font-size: 1.8rem;
-    } */
     </style>
     """, unsafe_allow_html=True)
 
@@ -133,7 +128,7 @@ def init_db():
         load("routine_def")
     except: pass
 
-# --- [이미지 처리 함수 (흰색 배경 투명화)] ---
+# --- [이미지 처리 함수] ---
 @st.cache_data
 def get_processed_logo(image_path, icon_size=(40, 40)):
     try:
@@ -199,14 +194,15 @@ def login_page():
     processed_logo = get_processed_logo("logo.png", icon_size=(80, 80))
     
     if processed_logo:
+        # [수정] 제목을 "업무수첩"으로 변경
         st.markdown("""
             <div class="logo-title-container">
                 <img src="data:image/png;base64,{}" style="max-height: 80px; width: auto;">
-                <h1>조각달 업무수첩</h1>
+                <h1>업무수첩</h1>
             </div>
         """.format(image_to_base64(processed_logo)), unsafe_allow_html=True)
     else:
-        st.markdown("<h1 style='text-align:center;'>조각달 업무수첩</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align:center;'>업무수첩</h1>", unsafe_allow_html=True)
 
     try:
         if cookies.get("auto_login") == "true":
@@ -366,18 +362,15 @@ def main():
         login_page()
     else:
         with st.sidebar:
-            # 사이드바 로고 (크기 조절: 40x40)
-            processed_logo_sidebar = get_processed_logo("logo.png", icon_size=(40, 40))
+            # [수정] 사이드바 로고 크기를 2배로 증가 (80, 80)
+            processed_logo_sidebar = get_processed_logo("logo.png", icon_size=(80, 80))
             if processed_logo_sidebar:
-                # [수정] <h1>조각달</h1> 태그를 제거하여 글씨가 보이지 않게 합니다.
+                # max-height도 80px로 변경
                 st.markdown("""
                     <div class="sidebar-logo-container">
-                        <img src="data:image/png;base64,{}" style="max-height: 40px; width: auto;">
+                        <img src="data:image/png;base64,{}" style="max-height: 80px; width: auto;">
                     </div>
                 """.format(image_to_base64(processed_logo_sidebar)), unsafe_allow_html=True)
-            # else:
-            #     # 로고 처리에 실패했을 때 대체 텍스트도 출력하지 않습니다.
-            #     st.title("조각달")
                 
             st.write(f"**{st.session_state['name']}**님")
             m = option_menu("메뉴", ["본점 공지", "작업장 공지", "반복 업무", "로그아웃"], icons=['house','tools','repeat','box-arrow-right'], menu_icon="cast", default_index=0, styles={"container": {"background-color": "#FFF3E0"}, "nav-link-selected": {"background-color": "#8D6E63"}})
