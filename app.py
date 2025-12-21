@@ -10,19 +10,19 @@ from streamlit_cookies_manager import CookieManager
 # --- [0. 기본 설정] ---
 st.set_page_config(
     page_title="조각달과자점 파트너", 
-    page_icon="🥐", 
+    page_icon="logo.png",  # [수정] 🥐 이모지 -> logo.png 파일로 변경
     layout="wide", 
     initial_sidebar_state="collapsed" 
 )
 
-# --- [1. 디자인 & CSS (수정됨)] ---
+# --- [1. 디자인 & CSS] ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
     html, body, [class*="css"]  { font-family: 'Noto Sans KR', sans-serif; color: #4E342E; }
     .stApp { background-color: #FFF3E0; }
     
-    /* 사이드바(메뉴창) 배경색 지정 - 내용이 잘 보이게 */
+    /* 사이드바(메뉴창) 배경색 지정 */
     section[data-testid="stSidebar"] {
         background-color: #FFF3E0;
         border-right: 1px solid #ddd;
@@ -34,8 +34,6 @@ st.markdown("""
     /* 불필요한 장식 숨김 */
     [data-testid="stDecoration"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
-    
-    /* [수정] 메뉴 내용을 숨기던 범인 코드 삭제됨 */
     
     /* 사이드바 여는 화살표(>) 버튼 디자인 */
     [data-testid="stSidebarCollapsedControl"] {
@@ -50,7 +48,6 @@ st.markdown("""
         left: 10px !important;
     }
     
-    /* 모바일 여백 조정 */
     .block-container { padding-top: 50px !important; }
     
     /* 버튼 스타일 */
@@ -76,8 +73,6 @@ st.markdown("""
 
 # --- [쿠키 매니저] ---
 cookies = CookieManager()
-# 모바일 흰 화면 방지용 주석 처리
-# if not cookies.ready(): st.stop()
 
 # --- [2. 구글 시트 연결] ---
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -160,8 +155,13 @@ def get_pending_tasks_list():
 
 # --- [4. 화면 구성] ---
 def login_page():
-    st.markdown("<br><h1 style='text-align:center;'>🥐 조각달 업무수첩</h1>", unsafe_allow_html=True)
-    
+    # [수정] 로고 이미지와 제목을 중앙 정렬로 배치
+    st.markdown("<br>", unsafe_allow_html=True) # 상단 여백
+    col1, col2, col3 = st.columns([1, 2, 1]) # 중앙 정렬을 위한 컬럼 분할
+    with col2:
+        st.image("logo.png", use_column_width=True) # 로고 이미지 배치
+        st.markdown("<h1 style='text-align:center; margin-top: -15px;'>조각달 업무수첩</h1>", unsafe_allow_html=True) # 제목 배치
+
     # 자동 로그인 로직
     try:
         if cookies.get("auto_login") == "true":
@@ -321,7 +321,9 @@ def main():
         login_page()
     else:
         with st.sidebar:
-            st.title("🥐 조각달")
+            # [수정] 사이드바에 로고 이미지 추가 및 이모지 제거
+            st.image("logo.png", width=80) # 너비는 적절히 조절해주세요
+            st.title("조각달")
             st.write(f"**{st.session_state['name']}**님")
             m = option_menu("메뉴", ["본점 공지", "작업장 공지", "반복 업무", "로그아웃"], icons=['house','tools','repeat','box-arrow-right'], menu_icon="cast", default_index=0, styles={"container": {"background-color": "#FFF3E0"}, "nav-link-selected": {"background-color": "#8D6E63"}})
             if m=="로그아웃":
