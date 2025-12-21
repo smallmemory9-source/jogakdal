@@ -6,11 +6,12 @@ from datetime import datetime, date
 from streamlit_option_menu import option_menu
 from streamlit_gsheets import GSheetsConnection
 from streamlit_cookies_manager import CookieManager
+from PIL import Image # 이미지 처리를 위한 도구
 
 # --- [0. 기본 설정] ---
 st.set_page_config(
     page_title="조각달과자점 파트너", 
-    page_icon="logo.png",  # [수정] 🥐 이모지 -> logo.png 파일로 변경
+    page_icon="🥐",  # 탭 아이콘은 다시 이모지로 변경 (작은 이미지가 깨질 수 있어서)
     layout="wide", 
     initial_sidebar_state="collapsed" 
 )
@@ -22,7 +23,7 @@ st.markdown("""
     html, body, [class*="css"]  { font-family: 'Noto Sans KR', sans-serif; color: #4E342E; }
     .stApp { background-color: #FFF3E0; }
     
-    /* 사이드바(메뉴창) 배경색 지정 */
+    /* 사이드바 배경 및 테두리 */
     section[data-testid="stSidebar"] {
         background-color: #FFF3E0;
         border-right: 1px solid #ddd;
@@ -35,7 +36,7 @@ st.markdown("""
     [data-testid="stDecoration"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
     
-    /* 사이드바 여는 화살표(>) 버튼 디자인 */
+    /* 사이드바 화살표(>) 버튼 디자인 */
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important;
         visibility: visible !important;
@@ -67,6 +68,29 @@ st.markdown("""
         border: 1px solid #FFCDD2;
         border-radius: 10px;
         font-weight: bold;
+    }
+    
+    /* [수정] 로고 이미지와 제목을 나란히 배치하기 위한 스타일 */
+    .logo-title-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 20px;
+    }
+    .logo-title-container h1 {
+        margin: 0 0 0 10px; /* 로고와 제목 사이 간격 */
+        font-size: 2.5rem;
+    }
+    
+    /* 사이드바 로고 컨테이너 */
+    .sidebar-logo-container {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+    }
+    .sidebar-logo-container h1 {
+        margin: 0 0 0 10px;
+        font-size: 1.8rem;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -118,6 +142,39 @@ def init_db():
 
 init_db()
 
+# --- [이미지 처리 함수 (캐싱)] ---
+@st.cache_data
+def get_processed_logo(image_path, icon_size=(40, 40)):
+    """
+    1. 흰색 배경을 투명하게 만듭니다.
+    2. 하단의 글씨 부분을 잘라냅니다.
+    3. 지정된 아이콘 크기로 줄입니다.
+    """
+    try:
+        img = Image.open(image_path).convert("RGBA")
+        datas = img.getdata()
+
+        # 1. 흰색 배경 투명화 (RGB값이 모두 200 이상인 밝은 픽셀을 투명 처리)
+        newData = []
+        for item in datas:
+            if item[0] > 200 and item[1] > 200 and item[2] > 200:
+                newData.append((255, 255, 255, 0)) # 투명
+            else:
+                newData.append(item)
+        img.putdata(newData)
+        
+        # 2. 하단 글씨 자르기 (이미지 높이의 상위 70%만 남김 - 비율 조절 가능)
+        width, height = img.size
+        crop_height = int(height * 0.70) 
+        img = img.crop((0, 0, width, crop_height))
+        
+        # 3. 아이콘 크기로 리사이즈 (고품질 유지)
+        img = img.resize(icon_size, Image.LANCZOS)
+        return img
+    except Exception as e:
+        st.error(f"로고 처리 중 오류 발생: {e}")
+        return None
+
 # --- [3. 로직 함수] ---
 def is_task_due(start_date_str, cycle_type, interval_val):
     try:
@@ -155,12 +212,26 @@ def get_pending_tasks_list():
 
 # --- [4. 화면 구성] ---
 def login_page():
-    # [수정] 로고 이미지와 제목을 중앙 정렬로 배치
-    st.markdown("<br>", unsafe_allow_html=True) # 상단 여백
-    col1, col2, col3 = st.columns([1, 2, 1]) # 중앙 정렬을 위한 컬럼 분할
-    with col2:
-        st.image("logo.png", use_column_width=True) # 로고 이미지 배치
-        st.markdown("<h1 style='text-align:center; margin-top: -15px;'>조각달 업무수첩</h1>", unsafe_allow_html=True) # 제목 배치
+    # [수정] 처리된 로고 이미지와 제목을 가로로 나란히 배치
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # 로고 이미지 처리 (로그인 화면용 크기: 60x60)
+    processed_logo = get_processed_logo("logo.png", icon_size=(60, 60))
+    
+    if processed_logo:
+        # Streamlit의 컬럼 기능을 사용하여 이미지와 텍스트 배치
+        c1, c2, c3 = st.columns([1, 3, 1])
+        with c2:
+             # CSS Flexbox를 활용한 중앙 정렬 컨테이너
+            st.markdown("""
+                <div class="logo-title-container">
+                    <img src="data:image/png;base64,{}" width="60">
+                    <h1>조각달 업무수첩</h1>
+                </div>
+            """.format(image_to_base64(processed_logo)), unsafe_allow_html=True)
+    else:
+        # 로고 처리에 실패한 경우 텍스트만 표시
+        st.markdown("<h1 style='text-align:center;'>조각달 업무수첩</h1>", unsafe_allow_html=True)
 
     # 자동 로그인 로직
     try:
@@ -314,6 +385,14 @@ def page_routine():
                 m = m.sort_values(["done_date", "created_at"], ascending=False)
                 st.dataframe(m[["done_date", "task_name", "worker"]], use_container_width=True, hide_index=True)
 
+# --- [이미지를 HTML로 변환하는 헬퍼 함수] ---
+import io
+import base64
+def image_to_base64(img):
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode()
+
 def main():
     if "logged_in" not in st.session_state: st.session_state.logged_in = False
     
@@ -321,9 +400,18 @@ def main():
         login_page()
     else:
         with st.sidebar:
-            # [수정] 사이드바에 로고 이미지 추가 및 이모지 제거
-            st.image("logo.png", width=80) # 너비는 적절히 조절해주세요
-            st.title("조각달")
+            # [수정] 사이드바에 처리된 로고 이미지 (아이콘 크기: 30x30)와 제목 배치
+            processed_logo_sidebar = get_processed_logo("logo.png", icon_size=(30, 30))
+            if processed_logo_sidebar:
+                st.markdown("""
+                    <div class="sidebar-logo-container">
+                        <img src="data:image/png;base64,{}" width="30">
+                        <h1>조각달</h1>
+                    </div>
+                """.format(image_to_base64(processed_logo_sidebar)), unsafe_allow_html=True)
+            else:
+                st.title("조각달")
+                
             st.write(f"**{st.session_state['name']}**님")
             m = option_menu("메뉴", ["본점 공지", "작업장 공지", "반복 업무", "로그아웃"], icons=['house','tools','repeat','box-arrow-right'], menu_icon="cast", default_index=0, styles={"container": {"background-color": "#FFF3E0"}, "nav-link-selected": {"background-color": "#8D6E63"}})
             if m=="로그아웃":
