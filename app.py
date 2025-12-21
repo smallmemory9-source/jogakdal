@@ -10,13 +10,53 @@ from streamlit_gsheets import GSheetsConnection
 from streamlit_cookies_manager import CookieManager
 from PIL import Image
 
-# --- [0. 기본 설정] ---
+# --- [이미지 base64 인코딩 함수 (미리 선언)] ---
+def image_to_base64(img):
+    buffered = io.BytesIO()
+    img.save(buffered, format="PNG")
+    return base64.b64encode(buffered.getvalue()).decode()
+
+# --- [이미지 처리 함수 (미리 선언)] ---
+@st.cache_data
+def get_processed_logo(image_path, icon_size=(40, 40)):
+    try:
+        img = Image.open(image_path).convert("RGBA")
+        datas = img.getdata()
+        newData = []
+        for item in datas:
+            if item[0] > 200 and item[1] > 200 and item[2] > 200:
+                newData.append((255, 255, 255, 0))
+            else:
+                newData.append(item)
+        img.putdata(newData)
+        img = img.resize(icon_size, Image.LANCZOS)
+        return img
+    except Exception as e:
+        # st.error(f"로고 처리 중 오류 발생: {e}") # 초기화 중 에러 표시 방지
+        return None
+
+# --- [0. 기본 설정 & 아이콘 강제 적용] ---
 st.set_page_config(
     page_title="조각달과자점 파트너", 
     page_icon="🥐", 
     layout="wide", 
     initial_sidebar_state="collapsed" 
 )
+
+# [핵심] 홈 화면 아이콘 강제 설정을 위한 HTML 태그 삽입
+processed_icon = get_processed_logo("logo.png", icon_size=(192, 192)) # 고해상도 아이콘 준비
+if processed_icon:
+    icon_base64 = image_to_base64(processed_icon)
+    st.markdown(
+        f"""
+        <head>
+            <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,{icon_base64}">
+            <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,{icon_base64}">
+            <link rel="icon" type="image/png" sizes="16x16" href="data:image/png;base64,{icon_base64}">
+        </head>
+        """,
+        unsafe_allow_html=True
+    )
 
 # --- [1. 디자인 & CSS] ---
 st.markdown("""
@@ -128,30 +168,6 @@ def init_db():
         load("routine_def")
     except: pass
 
-# --- [이미지 처리 함수] ---
-@st.cache_data
-def get_processed_logo(image_path, icon_size=(40, 40)):
-    try:
-        img = Image.open(image_path).convert("RGBA")
-        datas = img.getdata()
-        newData = []
-        for item in datas:
-            if item[0] > 200 and item[1] > 200 and item[2] > 200:
-                newData.append((255, 255, 255, 0))
-            else:
-                newData.append(item)
-        img.putdata(newData)
-        img = img.resize(icon_size, Image.LANCZOS)
-        return img
-    except Exception as e:
-        st.error(f"로고 처리 중 오류 발생: {e}")
-        return None
-
-def image_to_base64(img):
-    buffered = io.BytesIO()
-    img.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode()
-
 # --- [3. 로직 함수] ---
 def is_task_due(start_date_str, cycle_type, interval_val):
     try:
@@ -194,7 +210,6 @@ def login_page():
     processed_logo = get_processed_logo("logo.png", icon_size=(80, 80))
     
     if processed_logo:
-        # [수정] 제목을 "업무수첩"으로 변경
         st.markdown("""
             <div class="logo-title-container">
                 <img src="data:image/png;base64,{}" style="max-height: 80px; width: auto;">
@@ -362,10 +377,9 @@ def main():
         login_page()
     else:
         with st.sidebar:
-            # [수정] 사이드바 로고 크기를 2배로 증가 (80, 80)
+            # 사이드바 로고 (80x80)
             processed_logo_sidebar = get_processed_logo("logo.png", icon_size=(80, 80))
             if processed_logo_sidebar:
-                # max-height도 80px로 변경
                 st.markdown("""
                     <div class="sidebar-logo-container">
                         <img src="data:image/png;base64,{}" style="max-height: 80px; width: auto;">
