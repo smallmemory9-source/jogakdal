@@ -4,7 +4,8 @@ import hashlib
 import time
 import io
 import base64
-from datetime import datetime, date, timedelta
+from datetime import datetime, date
+# timedelta는 사용하지 않으므로 삭제해도 되지만, 남겨두어도 무방합니다.
 from streamlit_option_menu import option_menu
 from streamlit_gsheets import GSheetsConnection
 from streamlit_cookies_manager import CookieManager
@@ -250,10 +251,12 @@ def login_page():
                                 cookies["auto_login"] = "true"
                                 cookies["uid"] = uid
                                 cookies["upw"] = hpw
-                                cookies.save(expires_at=datetime.now() + timedelta(days=30))
+                                # [수정] expires_at 제거 (에러 원인 해결)
+                                cookies.save() 
                             else:
                                 if cookies.get("auto_login"): 
                                     cookies["auto_login"] = "false"
+                                    # [수정] expires_at 제거
                                     cookies.save()
                             st.rerun()
                         else:
@@ -318,14 +321,10 @@ def page_staff_mgmt():
 def page_board(b_name, icon):
     st.header(f"{icon} {b_name} 게시판")
     user_role = st.session_state['role']
-    
-    # [수정] 글쓰기 권한: Master/Manager 이거나, '건의사항' 게시판일 경우 누구나
     can_write = (user_role in ["Master", "Manager"]) or (b_name == "건의사항")
     
     if can_write:
-        # 건의사항일 경우 문구 변경
         expander_title = "✏️ 건의사항 올리기" if b_name == "건의사항" else "✏️ 글 쓰기 (Master/Manager)"
-        
         with st.expander(expander_title):
             with st.form(f"w_{b_name}"):
                 tt = st.text_input("제목")
@@ -349,9 +348,7 @@ def page_board(b_name, icon):
         else:
             mp = mp.sort_values("id", ascending=False)
             for _, r in mp.iterrows():
-                # 삭제 권한: Master 또는 본인 글
                 can_delete = (user_role == "Master") or (r['author'] == st.session_state["name"])
-                
                 with st.expander(f"{r['title']} ({r['author']})"):
                     st.write(r['content'])
                     if can_delete and st.button("삭제", key=f"del_{r['id']}"):
@@ -425,8 +422,8 @@ def main():
                         u = users[(users["username"] == sid) & (users["password"] == spw)]
                         if not u.empty and check_approved(u.iloc[0].get("approved", "False")):
                             st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"]})
-                            cookies.save(expires_at=datetime.now() + timedelta(days=30))
-                            st.rerun()
+                            # [수정] expires_at 제거
+                            cookies.save()
         except: pass
 
     if not st.session_state.logged_in:
@@ -443,7 +440,6 @@ def main():
             
             st.write(f"**{st.session_state['name']}**님")
             
-            # [수정] 메뉴에 '건의사항' 추가
             menu_opts = ["본점 공지", "작업장 공지", "건의사항", "반복 업무"]
             menu_icons = ['house', 'tools', 'lightbulb', 'repeat']
             if st.session_state['role'] == "Master":
@@ -467,7 +463,7 @@ def main():
         if m == "직원 관리": page_staff_mgmt()
         elif m == "본점 공지": page_board("본점", "🏠")
         elif m == "작업장 공지": page_board("작업장", "🏭")
-        elif m == "건의사항": page_board("건의사항", "💡") # [수정] 건의사항 연결
+        elif m == "건의사항": page_board("건의사항", "💡")
         elif m == "반복 업무": page_routine()
 
 if __name__ == "__main__":
