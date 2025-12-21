@@ -80,10 +80,11 @@ st.markdown("""
         align-items: center;
         margin-bottom: 10px;
     }
-    .sidebar-logo-container h1 {
+    /* 사이드바에서 글씨를 제거했으므로 h1 스타일은 필요 없어졌습니다. */
+    /* .sidebar-logo-container h1 {
         margin: 0 0 0 10px;
         font-size: 1.8rem;
-    }
+    } */
     </style>
     """, unsafe_allow_html=True)
 
@@ -132,27 +133,19 @@ def init_db():
         load("routine_def")
     except: pass
 
-# --- [이미지 처리 함수 (최종 수정: 흰색 배경 투명화)] ---
+# --- [이미지 처리 함수 (흰색 배경 투명화)] ---
 @st.cache_data
 def get_processed_logo(image_path, icon_size=(40, 40)):
     try:
-        # 1. 이미지를 열어서 RGBA(색상+투명도) 모드로 변환
         img = Image.open(image_path).convert("RGBA")
         datas = img.getdata()
-
-        # 2. 모든 픽셀을 검사하여 흰색(또는 아주 밝은 색)을 투명하게 변경
         newData = []
         for item in datas:
-            # R, G, B 값이 모두 200 이상이면 흰색 배경으로 간주
             if item[0] > 200 and item[1] > 200 and item[2] > 200:
-                newData.append((255, 255, 255, 0)) # 완전 투명(Alpha=0)으로 설정
+                newData.append((255, 255, 255, 0))
             else:
-                newData.append(item) # 나머지는 원래 색상 유지
-        
-        # 3. 처리된 데이터를 이미지에 적용
+                newData.append(item)
         img.putdata(newData)
-        
-        # 4. 아이콘 크기로 리사이즈 (잘라내기 단계 삭제됨)
         img = img.resize(icon_size, Image.LANCZOS)
         return img
     except Exception as e:
@@ -203,7 +196,6 @@ def get_pending_tasks_list():
 def login_page():
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # 로그인 화면용 로고 (크기 조절: 80x80)
     processed_logo = get_processed_logo("logo.png", icon_size=(80, 80))
     
     if processed_logo:
@@ -377,14 +369,15 @@ def main():
             # 사이드바 로고 (크기 조절: 40x40)
             processed_logo_sidebar = get_processed_logo("logo.png", icon_size=(40, 40))
             if processed_logo_sidebar:
+                # [수정] <h1>조각달</h1> 태그를 제거하여 글씨가 보이지 않게 합니다.
                 st.markdown("""
                     <div class="sidebar-logo-container">
                         <img src="data:image/png;base64,{}" style="max-height: 40px; width: auto;">
-                        <h1>조각달</h1>
                     </div>
                 """.format(image_to_base64(processed_logo_sidebar)), unsafe_allow_html=True)
-            else:
-                st.title("조각달")
+            # else:
+            #     # 로고 처리에 실패했을 때 대체 텍스트도 출력하지 않습니다.
+            #     st.title("조각달")
                 
             st.write(f"**{st.session_state['name']}**님")
             m = option_menu("메뉴", ["본점 공지", "작업장 공지", "반복 업무", "로그아웃"], icons=['house','tools','repeat','box-arrow-right'], menu_icon="cast", default_index=0, styles={"container": {"background-color": "#FFF3E0"}, "nav-link-selected": {"background-color": "#8D6E63"}})
