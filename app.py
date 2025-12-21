@@ -106,30 +106,37 @@ SHEET_NAMES = {
     "inform_logs": "inform_logs"
 }
 
-# [핵심 수정 1] 읽기 한도 초과 방지: ttl=600 (10분간 캐시 유지)
-# 메뉴를 이동해도 구글 시트를 다시 읽지 않고 메모리에서 가져옵니다.
+# [핵심 수정 1] 데이터 읽기 안전장치
+# ttl=600 (10분)으로 설정하여 구글 시트 과부하를 막음
 @st.cache_data(ttl=600)
 def load_data(key):
-    try:
-        return conn.read(worksheet=SHEET_NAMES[key], ttl=0)
-    except Exception:
-        return pd.DataFrame()
+    max_retries = 3
+    for i in range(max_retries):
+        try:
+            return conn.read(worksheet=SHEET_NAMES[key], ttl=0)
+        except Exception as e:
+            if "429" in str(e) or "Quota exceeded" in str(e):
+                time.sleep(2)
+                continue
+            # 다른 에러라면 빈 데이터프레임 반환 (단, 저장은 절대 하지 않음)
+            return pd.DataFrame()
+    return pd.DataFrame()
 
 def load(key): return load_data(key)
 
-# [핵심 수정 2] 저장 시에만 강제 갱신 및 재시도
+# [핵심 수정 2] 저장 시 강력한 통신 보장
 def save(key, df):
     max_retries = 3
     for i in range(max_retries):
         try:
             conn.update(worksheet=SHEET_NAMES[key], data=df)
-            load_data.clear() # [중요] 저장이 성공하면 캐시를 지워서 다음 읽기 때 새 정보를 가져오게 함
+            load_data.clear() # 저장 성공 시에만 캐시 갱신
             return True
         except Exception as e:
             if i == max_retries - 1:
-                st.error(f"통신 지연 발생. 잠시 후 다시 시도해주세요. ({e})")
+                st.error(f"⚠️ 저장 실패: 인터넷 연결이나 구글 시트 상태를 확인해주세요. ({e})")
                 return False
-            time.sleep(2) # 2초 대기 후 재시도
+            time.sleep(2)
 
 def hash_password(password):
     return hashlib.sha256(str(password).encode()).hexdigest()
@@ -138,21 +145,12 @@ def check_approved(val):
     v = str(val).strip().lower()
     return v in ["true", "1", "1.0", "yes", "y", "t"]
 
+# [핵심 수정 3] 초기화 로직(init_db) 완전 무력화 (Data Loss 방지)
 def init_db():
+    # 이제 시트가 존재하므로, 앱이 자동으로 덮어쓰거나 초기화하는 코드를 제거합니다.
+    # 오직 연결 확인만 수행합니다.
     try:
-        users = load("users")
-        if users.empty or "username" not in users.columns:
-            admin_pw = hash_password("1234")
-            init_users = pd.DataFrame([{
-                "username": "admin", 
-                "password": admin_pw, 
-                "name": "사장님", 
-                "role": "Master",
-                "approved": "True",
-                "department": "전체"
-            }])
-            save("users", init_users)
-        # 초기 로딩 (캐시 생성)
+        # 가볍게 한 번 읽어서 캐시만 생성 (데이터 건드리지 않음)
         for key in SHEET_NAMES:
             load(key)
     except: pass
@@ -278,7 +276,7 @@ def login_page():
                             st.rerun()
                         else: st.warning("⏳ 승인 대기 중")
                     else: st.error("정보 불일치")
-                else: st.error("DB 오류")
+                else: st.error("DB 오류 (잠시 후 다시 시도)")
     with tab2:
         with st.form("signup"):
             st.write("가입 신청")
@@ -288,42 +286,41 @@ def login_page():
             new_dept = st.selectbox("주 근무지", ["전체", "본점", "작업장"])
             if st.form_submit_button("신청"):
                 users = load("users")
+                # users가 비어있어도(통신오류) 덮어쓰지 않고 에러 처리하거나, 신규 생성 시도
                 if not users.empty and new_id in users["username"].values: st.error("중복 아이디")
                 elif new_id and new_pw and new_name:
                     new_user = pd.DataFrame([{"username": new_id, "password": hash_password(new_pw), "name": new_name, "role": "Staff", "approved": "False", "department": new_dept}])
-                    if users.empty: save("users", new_user)
-                    else: save("users", pd.concat([users, new_user], ignore_index=True))
-                    st.success("신청 완료")
+                    if users.empty: 
+                        # 주의: 통신 에러로 empty일 수 있으므로, 바로 저장하지 말고 사용자에게 알림
+                        st.warning("서버 통신 원활하지 않음. 잠시 후 다시 시도해주세요.")
+                        # (강제 덮어쓰기 방지를 위해 여기서 save 호출 안 함)
+                    else: 
+                        save("users", pd.concat([users, new_user], ignore_index=True))
+                        st.success("신청 완료")
                 else: st.warning("빈칸 확인")
 
 def page_inform():
     st.subheader("📢 인폼노트")
-    
-    # 1. 조회 날짜 선택
     selected_date = st.date_input("📅 날짜 조회", value=date.today())
     selected_date_str = selected_date.strftime("%Y-%m-%d")
-    
     user_role = st.session_state['role']
     username = st.session_state['name']
     
-    # 2. 글쓰기 (등록 시 에러 방지를 위해 read -> concat -> write 순서 준수)
     if user_role in ["Master", "Manager"]:
         with st.expander("📝 인폼 작성"):
             with st.form("new_inform"):
                 target_date_input = st.date_input("업무 수행일", value=selected_date)
                 ic = st.text_area("전달 내용 (필수)", height=100)
-                
                 if st.form_submit_button("등록"):
                     if ic.strip() == "":
                         st.warning("내용을 입력해주세요.")
                     else:
-                        # [중요] 최신 데이터를 강제로 읽어옴 (load_data.clear 없이 direct read 아님, 갱신된 캐시 사용)
-                        # 여기선 구조상 load()를 호출하지만, save 함수 내부에서 clear()하므로 괜찮음.
-                        df = load("inform_notes") 
+                        # 등록할 때는 최신 데이터를 반드시 확인해야 함 (clear cache)
+                        load_data.clear()
+                        df = load("inform_notes")
                         nid = 1
                         if not df.empty and "id" in df.columns:
                             nid = pd.to_numeric(df["id"], errors='coerce').fillna(0).max() + 1
-                        
                         new_note = pd.DataFrame([{
                             "id": nid, 
                             "target_date": target_date_input.strftime("%Y-%m-%d"), 
@@ -331,14 +328,16 @@ def page_inform():
                             "author": username, 
                             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
                         }])
-                        
-                        if df.empty: save("inform_notes", new_note)
-                        else: save("inform_notes", pd.concat([df, new_note], ignore_index=True))
+                        if df.empty: 
+                            # 여기서도 안전장치: 기존 데이터가 안보인다고 덮어쓰면 안됨.
+                            # 하지만 첫 글일 수 있으므로 save 시도 (save 함수 내 재시도 로직 활용)
+                            save("inform_notes", new_note)
+                        else: 
+                            save("inform_notes", pd.concat([df, new_note], ignore_index=True))
                         st.success("등록 완료")
                         time.sleep(1)
                         st.rerun()
 
-    # 3. 조회 및 확인
     notes = load("inform_notes")
     logs = load("inform_logs")
     cmts = load("comments")
@@ -353,7 +352,6 @@ def page_inform():
         st.info(f"{selected_date_str} 의 인폼이 없습니다.")
     else:
         daily_notes = daily_notes.sort_values("id", ascending=False)
-        
         for _, r in daily_notes.iterrows():
             note_id = str(r["id"])
             with st.container():
@@ -408,7 +406,9 @@ def page_inform():
 def page_staff_mgmt():
     st.subheader("👥 직원 관리")
     users = load("users")
-    if users.empty: return
+    if users.empty: 
+        st.warning("데이터를 불러오지 못했습니다. 새로고침 해주세요.")
+        return
     if "approved" not in users.columns: users["approved"] = "False"
     if "department" not in users.columns: users["department"] = "전체"
     users["is_approved_bool"] = users["approved"].apply(check_approved)
@@ -555,8 +555,6 @@ def main():
     if not st.session_state.logged_in:
         login_page()
     else:
-        # [신규] 상단 데이터 새로고침 버튼 (사이드바 대체)
-        # 로고와 환영문구 사이 또는 위에 작게 배치
         processed_logo_header = get_processed_logo("logo.png", icon_size=(50, 50))
         c1, c2, c3 = st.columns([1, 4, 1])
         with c1:
@@ -564,12 +562,10 @@ def main():
         with c2:
             st.markdown(f"<div style='padding-top:10px;'><b>{st.session_state['name']}</b>님 ({st.session_state.get('department','전체')})</div>", unsafe_allow_html=True)
         with c3:
-            # 수동 새로고침 버튼
             if st.button("🔄", help="데이터 새로고침"):
                 load_data.clear()
                 st.rerun()
 
-        # 메뉴
         menu_opts = []
         menu_icons = []
         dept = st.session_state.get('department', '전체')
@@ -605,7 +601,6 @@ def main():
         if m=="나가기":
             st.session_state.logged_in=False; cookies["auto_login"]="false"; cookies.save(); st.rerun()
 
-        # 팝업 로직
         if st.session_state.get("show_popup_on_login", False):
             pt = get_pending_tasks_list()
             unconfirmed_informs = get_unconfirmed_inform_list(st.session_state['name'])
