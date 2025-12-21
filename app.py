@@ -10,13 +10,12 @@ from streamlit_gsheets import GSheetsConnection
 from streamlit_cookies_manager import CookieManager
 from PIL import Image
 
-# --- [이미지 base64 인코딩 함수] ---
+# --- [이미지 처리 함수들] ---
 def image_to_base64(img):
     buffered = io.BytesIO()
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode()
 
-# --- [이미지 처리 함수] ---
 @st.cache_data
 def get_processed_logo(image_path, icon_size=(40, 40)):
     try:
@@ -31,18 +30,18 @@ def get_processed_logo(image_path, icon_size=(40, 40)):
         img.putdata(newData)
         img = img.resize(icon_size, Image.LANCZOS)
         return img
-    except Exception as e:
+    except Exception:
         return None
 
-# --- [0. 기본 설정 (여기가 수정되었습니다!)] ---
+# --- [0. 기본 설정] ---
 st.set_page_config(
     page_title="조각달과자점 파트너", 
-    page_icon="logo.png",  # [핵심 수정] 🥐 이모지를 지우고 'logo.png' 파일명을 넣었습니다!
+    page_icon="logo.png", 
     layout="wide", 
     initial_sidebar_state="collapsed" 
 )
 
-# [홈 화면 아이콘 강제 적용 태그]
+# 아이콘 강제 적용
 processed_icon = get_processed_logo("logo.png", icon_size=(192, 192))
 if processed_icon:
     icon_base64 = image_to_base64(processed_icon)
@@ -119,6 +118,11 @@ st.markdown("""
         align-items: center;
         margin-bottom: 10px;
     }
+    
+    /* 권한 뱃지 스타일 */
+    .role-badge {
+        padding: 2px 8px; border-radius: 10px; font-size: 0.8em; font-weight: bold; color: white;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -159,13 +163,23 @@ def hash_password(password):
 def init_db():
     try:
         users = load("users")
+        # [초기 계정 생성] admin / 1234 -> 권한: Master, approved: True
         if users.empty or "username" not in users.columns:
             admin_pw = hash_password("1234")
-            init_users = pd.DataFrame([{"username": "admin", "password": admin_pw, "name": "사장님", "role": "Manager"}])
+            # approved 컬럼 추가 (True/False 문자열로 저장)
+            init_users = pd.DataFrame([{
+                "username": "admin", 
+                "password": admin_pw, 
+                "name": "사장님", 
+                "role": "Master",
+                "approved": "True" 
+            }])
             save("users", init_users)
         load("posts")
         load("routine_def")
     except: pass
+
+init_db()
 
 # --- [3. 로직 함수] ---
 def is_task_due(start_date_str, cycle_type, interval_val):
@@ -203,11 +217,11 @@ def get_pending_tasks_list():
     return pending
 
 # --- [4. 화면 구성] ---
+
+# [1] 로그인 & 회원가입 페이지 (수정됨: 승인 로직 추가)
 def login_page():
     st.markdown("<br>", unsafe_allow_html=True)
-    
     processed_logo = get_processed_logo("logo.png", icon_size=(80, 80))
-    
     if processed_logo:
         st.markdown("""
             <div class="logo-title-container">
@@ -218,6 +232,7 @@ def login_page():
     else:
         st.markdown("<h1 style='text-align:center;'>업무수첩</h1>", unsafe_allow_html=True)
 
+    # 자동 로그인 시도
     try:
         if cookies.get("auto_login") == "true":
             sid, spw = cookies.get("uid"), cookies.get("upw")
@@ -226,13 +241,18 @@ def login_page():
                 if not users.empty:
                     users["username"] = users["username"].astype(str)
                     users["password"] = users["password"].astype(str)
+                    # 승인된 사용자만 자동 로그인 가능
                     u = users[(users["username"] == sid) & (users["password"] == spw)]
                     if not u.empty:
-                        st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"], "show_login_alert": True})
-                        st.rerun()
+                        # approved 체크 (문자열 'True' 인지 확인)
+                        if str(u.iloc[0].get("approved", "False")) == "True":
+                            st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"], "show_login_alert": True})
+                            st.rerun()
     except: pass
 
-    tab1, tab2 = st.tabs(["로그인", "회원가입"])
+    tab1, tab2 = st.tabs(["로그인", "회원가입 요청"])
+    
+    # [로그인 탭]
     with tab1:
         with st.form("login"):
             uid = st.text_input("아이디")
@@ -246,85 +266,206 @@ def login_page():
                     users["password"] = users["password"].astype(str)
                     u = users[(users["username"] == uid) & (users["password"] == hpw)]
                     if not u.empty:
-                        st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"], "show_login_alert": True})
-                        if auto:
-                            cookies["auto_login"] = "true"
-                            cookies["uid"] = uid
-                            cookies["upw"] = hpw
-                            cookies.save()
+                        # [핵심] 승인 여부 체크
+                        is_approved = str(u.iloc[0].get("approved", "False")) == "True"
+                        
+                        if is_approved:
+                            st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"], "show_login_alert": True})
+                            if auto:
+                                cookies["auto_login"] = "true"
+                                cookies["uid"] = uid
+                                cookies["upw"] = hpw
+                                cookies.save()
+                            else:
+                                if cookies.get("auto_login"): cookies["auto_login"] = "false"; cookies.save()
+                            st.rerun()
                         else:
-                            if cookies.get("auto_login"): cookies["auto_login"] = "false"; cookies.save()
-                        st.rerun()
-                    else: st.error("아이디/비번 확인")
-                else: st.error("DB 오류")
-    
+                            st.warning("⏳ 아직 승인 대기 중입니다. 사장님께 문의하세요.")
+                    else: st.error("아이디 또는 비밀번호가 틀렸습니다.")
+                else: st.error("DB 접속 오류")
+
+    # [회원가입 신청 탭]
     with tab2:
         with st.form("signup"):
-            nid = st.text_input("희망 아이디")
-            npw = st.text_input("희망 비밀번호", type="password")
-            nname = st.text_input("이름")
-            if st.form_submit_button("가입"):
+            st.write("가입을 신청하면 Master 승인 후 이용 가능합니다.")
+            new_id = st.text_input("희망 아이디")
+            new_pw = st.text_input("희망 비밀번호", type="password")
+            new_name = st.text_input("이름 (실명)")
+            
+            if st.form_submit_button("가입 신청"):
                 users = load("users")
-                if not users.empty and nid in users["username"].values: st.warning("중복 ID")
-                elif nid and npw and nname:
-                    new_u = pd.DataFrame([{"username": nid, "password": hash_password(npw), "name": nname, "role": "Staff"}])
-                    if users.empty: save("users", new_u)
-                    else: save("users", pd.concat([users, new_u], ignore_index=True))
-                    st.success("가입 완료")
+                if not users.empty and new_id in users["username"].values:
+                    st.error("이미 존재하는 아이디입니다.")
+                elif new_id and new_pw and new_name:
+                    # 신규 가입 시 approved = "False"로 저장
+                    new_user = pd.DataFrame([{
+                        "username": new_id, 
+                        "password": hash_password(new_pw), 
+                        "name": new_name, 
+                        "role": "Staff",   # 기본은 Staff
+                        "approved": "False" # 승인 대기 상태
+                    }])
+                    if users.empty: save("users", new_user)
+                    else: save("users", pd.concat([users, new_user], ignore_index=True))
+                    st.success("✅ 신청 완료! 사장님 승인을 기다려주세요.")
+                else:
+                    st.warning("모든 항목을 입력해주세요.")
 
+# [2] 직원 관리 페이지 (Master 전용 - 승인 기능 추가)
+def page_staff_mgmt():
+    st.header("👥 직원 관리 (Master 전용)")
+    
+    users = load("users")
+    if users.empty:
+        st.info("데이터가 없습니다.")
+        return
+
+    # 승인 여부 컬럼이 없으면 False로 간주
+    if "approved" not in users.columns:
+        users["approved"] = "False"
+
+    # [1] 승인 대기 목록 (approved != "True")
+    pending_users = users[users["approved"] != "True"]
+    
+    if not pending_users.empty:
+        st.subheader("⏳ 승인 대기 요청")
+        st.info(f"{len(pending_users)}명의 가입 요청이 있습니다.")
+        
+        for index, row in pending_users.iterrows():
+            with st.container():
+                c1, c2, c3, c4 = st.columns([2, 2, 1, 1])
+                c1.write(f"**{row['name']}** ({row['role']})")
+                c2.write(f"ID: {row['username']}")
+                
+                # 수락 버튼
+                if c3.button("수락", key=f"approve_{row['username']}"):
+                    users.loc[users["username"] == row["username"], "approved"] = "True"
+                    save("users", users)
+                    st.rerun()
+                
+                # 거절(삭제) 버튼
+                if c4.button("거절", key=f"reject_{row['username']}"):
+                    users = users[users["username"] != row["username"]]
+                    save("users", users)
+                    st.rerun()
+        st.divider()
+
+    # [2] 정식 직원 목록 (approved == "True")
+    st.subheader("✅ 정식 직원 목록")
+    active_users = users[users["approved"] == "True"]
+    
+    if not active_users.empty:
+        for index, row in active_users.iterrows():
+            with st.container():
+                c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+                c1.write(f"**{row['name']}**")
+                c2.write(f"ID: {row['username']}")
+                
+                # 권한 변경 (selectbox 사용 시 리로드 문제로 텍스트로 표시하거나 팝업 필요하지만, 여기선 단순 표시)
+                c3.write(f"Role: {row['role']}")
+                
+                if row['username'] != "admin" and row['username'] != st.session_state['name']: 
+                    if c4.button("삭제", key=f"del_active_{row['username']}"):
+                        new_df = users[users["username"] != row['username']]
+                        save("users", new_df)
+                        st.rerun()
+    else:
+        st.info("등록된 직원이 없습니다.")
+
+# [3] 게시판 페이지
 def page_board(b_name, icon):
     st.header(f"{icon} {b_name} 게시판")
-    with st.expander("✏️ 글 쓰기"):
-        with st.form(f"w_{b_name}"):
-            tt = st.text_input("제목")
-            ct = st.text_area("내용")
-            if st.form_submit_button("등록"):
-                df = load("posts")
-                nid = 1
-                if not df.empty and "id" in df.columns: nid = pd.to_numeric(df["id"], errors='coerce').fillna(0).max() + 1
-                np = pd.DataFrame([{"id": nid, "board_type": b_name, "title": tt, "content": ct, "author": st.session_state["name"], "date": datetime.now().strftime("%Y-%m-%d")}])
-                if df.empty: save("posts", np)
-                else: save("posts", pd.concat([df, np], ignore_index=True))
-                st.rerun()
-    
+    user_role = st.session_state['role']
+
+    if user_role in ["Master", "Manager"]:
+        with st.expander("✏️ 글 쓰기 (Master/Manager)"):
+            with st.form(f"w_{b_name}"):
+                tt = st.text_input("제목")
+                ct = st.text_area("내용")
+                if st.form_submit_button("등록"):
+                    df = load("posts")
+                    nid = 1
+                    if not df.empty and "id" in df.columns: nid = pd.to_numeric(df["id"], errors='coerce').fillna(0).max() + 1
+                    np = pd.DataFrame([{"id": nid, "board_type": b_name, "title": tt, "content": ct, "author": st.session_state["name"], "date": datetime.now().strftime("%Y-%m-%d")}])
+                    if df.empty: save("posts", np)
+                    else: save("posts", pd.concat([df, np], ignore_index=True))
+                    st.rerun()
+    elif user_role == "Staff":
+        st.info("💡 Staff는 글을 읽고 댓글로 수정 요청을 할 수 있습니다.")
+
     posts = load("posts")
     cmts = load("comments")
-    if posts.empty: st.info("글이 없습니다.")
+    
+    if posts.empty: st.info("게시글이 없습니다.")
     else:
         if "board_type" in posts.columns:
             mp = posts[posts["board_type"].astype(str).str.strip() == b_name]
-            if mp.empty: st.info("글이 없습니다.")
+            if mp.empty: st.info("게시글이 없습니다.")
             else:
                 mp = mp.sort_values("id", ascending=False)
                 for _, r in mp.iterrows():
                     lbl = f"{r['title']}   (✍️ {r['author']} | 📅 {r['date']})"
                     with st.expander(lbl):
-                        st.write(r['content'])
-                        st.markdown("---")
-                        if not cmts.empty:
-                            pcmts = cmts[cmts["post_id"].astype(str) == str(r["id"])]
-                            for _, c in pcmts.iterrows():
-                                st.markdown(f"<div class='comment-box'><b>{c['author']}</b>: {c['content']} <span style='color:#aaa;font-size:0.8em;'>({c['date']})</span></div>", unsafe_allow_html=True)
-                        with st.form(f"c_{r['id']}"):
-                            c1, c2 = st.columns([4,1])
-                            ctxt = c1.text_input("댓글", label_visibility="collapsed")
-                            if c2.form_submit_button("등록"):
-                                nc = pd.DataFrame([{"post_id": r["id"], "author": st.session_state["name"], "content": ctxt, "date": datetime.now().strftime("%m-%d %H:%M")}])
-                                if cmts.empty: save("comments", nc)
-                                else: save("comments", pd.concat([cmts, nc], ignore_index=True))
-                                st.rerun()
+                        edit_key = f"edit_mode_{r['id']}"
+                        if edit_key not in st.session_state: st.session_state[edit_key] = False
 
+                        if st.session_state[edit_key]:
+                            with st.form(f"edit_form_{r['id']}"):
+                                new_title = st.text_input("제목 수정", value=r['title'])
+                                new_content = st.text_area("내용 수정", value=r['content'])
+                                c_save, c_cancel = st.columns(2)
+                                if c_save.form_submit_button("저장"):
+                                    posts.loc[posts["id"] == r["id"], "title"] = new_title
+                                    posts.loc[posts["id"] == r["id"], "content"] = new_content
+                                    save("posts", posts)
+                                    st.session_state[edit_key] = False
+                                    st.rerun()
+                                if c_cancel.form_submit_button("취소"):
+                                    st.session_state[edit_key] = False
+                                    st.rerun()
+                        else:
+                            st.write(r['content'])
+                            st.markdown("---")
+                            
+                            btn_cols = st.columns([1, 1, 6])
+                            if user_role in ["Master", "Manager"]:
+                                if btn_cols[0].button("수정", key=f"btn_edit_{r['id']}"):
+                                    st.session_state[edit_key] = True
+                                    st.rerun()
+                            
+                            if user_role == "Master":
+                                if btn_cols[1].button("삭제", key=f"btn_del_{r['id']}"):
+                                    posts = posts[posts["id"] != r["id"]]
+                                    save("posts", posts)
+                                    st.rerun()
+
+                            if not cmts.empty:
+                                pcmts = cmts[cmts["post_id"].astype(str) == str(r["id"])]
+                                for _, c in pcmts.iterrows():
+                                    st.markdown(f"<div class='comment-box'><b>{c['author']}</b>: {c['content']} <span style='color:#aaa;font-size:0.8em;'>({c['date']})</span></div>", unsafe_allow_html=True)
+                            
+                            with st.form(f"c_{r['id']}"):
+                                c1, c2 = st.columns([4,1])
+                                ctxt = c1.text_input("댓글 (수정 요청 등)", label_visibility="collapsed", placeholder="댓글을 입력하세요")
+                                if c2.form_submit_button("등록"):
+                                    nc = pd.DataFrame([{"post_id": r["id"], "author": st.session_state["name"], "content": ctxt, "date": datetime.now().strftime("%m-%d %H:%M")}])
+                                    if cmts.empty: save("comments", nc)
+                                    else: save("comments", pd.concat([cmts, nc], ignore_index=True))
+                                    st.rerun()
+
+# [4] 업무 페이지
 def page_routine():
     st.header("🔄 반복 업무")
     defs = load("routine_def")
     logs = load("routine_log")
     if not defs.empty and "id" not in defs.columns: defs["id"] = range(1, len(defs)+1)
     today = date.today().strftime("%Y-%m-%d")
+    user_role = st.session_state['role']
     
     t1, t2 = st.tabs(["오늘의 업무", "기록"])
     with t1:
-        if st.session_state["role"] in ["Manager", "관리자"]:
-            with st.expander("⚙️ 설정 (관리자)"):
+        if user_role in ["Master", "Manager"]:
+            with st.expander("⚙️ 업무 추가/삭제 (Master/Manager)"):
                 with st.form("new_r"):
                     c1,c2 = st.columns(2)
                     rn = c1.text_input("업무명")
@@ -347,9 +488,10 @@ def page_routine():
                         if c2.button("삭제", key=f"d_{r['id']}"):
                             save("routine_def", defs[defs["id"]!=r['id']])
                             st.rerun()
+        
         st.divider()
         ptasks = get_pending_tasks_list()
-        if not ptasks: st.info("할 일 없음")
+        if not ptasks: st.info("오늘 예정된 업무가 없습니다.")
         else:
             for t in ptasks:
                 with st.container():
@@ -369,6 +511,7 @@ def page_routine():
                 m = m.sort_values(["done_date", "created_at"], ascending=False)
                 st.dataframe(m[["done_date", "task_name", "worker"]], use_container_width=True, hide_index=True)
 
+# [5] 메인 실행 함수
 def main():
     if "logged_in" not in st.session_state: st.session_state.logged_in = False
     
@@ -376,7 +519,6 @@ def main():
         login_page()
     else:
         with st.sidebar:
-            # 사이드바 로고 (80x80)
             processed_logo_sidebar = get_processed_logo("logo.png", icon_size=(80, 80))
             if processed_logo_sidebar:
                 st.markdown("""
@@ -385,8 +527,20 @@ def main():
                     </div>
                 """.format(image_to_base64(processed_logo_sidebar)), unsafe_allow_html=True)
                 
-            st.write(f"**{st.session_state['name']}**님")
-            m = option_menu("메뉴", ["본점 공지", "작업장 공지", "반복 업무", "로그아웃"], icons=['house','tools','repeat','box-arrow-right'], menu_icon="cast", default_index=0, styles={"container": {"background-color": "#FFF3E0"}, "nav-link-selected": {"background-color": "#8D6E63"}})
+            st.write(f"**{st.session_state['name']}**님 ({st.session_state['role']})")
+            
+            menu_options = ["본점 공지", "작업장 공지", "반복 업무"]
+            menu_icons = ['house', 'tools', 'repeat']
+            
+            if st.session_state['role'] == "Master":
+                menu_options.insert(0, "직원 관리")
+                menu_icons.insert(0, "people")
+                
+            menu_options.append("로그아웃")
+            menu_icons.append("box-arrow-right")
+
+            m = option_menu("메뉴", menu_options, icons=menu_icons, menu_icon="cast", default_index=0, styles={"container": {"background-color": "#FFF3E0"}, "nav-link-selected": {"background-color": "#8D6E63"}})
+            
             if m=="로그아웃":
                 st.session_state.logged_in=False
                 cookies["auto_login"]="false"
@@ -398,22 +552,10 @@ def main():
             if pt: st.toast(f"할 일 {len(pt)}건!", icon="🚨"); time.sleep(1)
             st.session_state["show_login_alert"] = False
         
-        if pt:
-            lbl = f"🚨 미완료 {len(pt)}건! (클릭해서 처리)"
-            with st.expander(lbl):
-                for t in pt:
-                    c1, c2 = st.columns([4,1])
-                    c1.markdown(f"**{t['task_name']}**")
-                    if c2.button("완료", key=f"ban_{t['id']}"):
-                        nl = pd.DataFrame([{"task_id": t["id"], "done_date": date.today().strftime("%Y-%m-%d"), "worker": st.session_state["name"], "created_at": datetime.now().strftime("%H:%M")}])
-                        l = load("routine_log")
-                        if l.empty: save("routine_log", nl)
-                        else: save("routine_log", pd.concat([l, nl], ignore_index=True))
-                        st.rerun()
-
-        if m=="본점 공지": page_board("본점", "🏠")
-        elif m=="작업장 공지": page_board("작업장", "🏭")
-        elif m=="반복 업무": page_routine()
+        if m == "직원 관리": page_staff_mgmt()
+        elif m == "본점 공지": page_board("본점", "🏠")
+        elif m == "작업장 공지": page_board("작업장", "🏭")
+        elif m == "반복 업무": page_routine()
 
 if __name__ == "__main__":
     main()
