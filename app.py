@@ -15,33 +15,37 @@ st.set_page_config(
     initial_sidebar_state="collapsed" 
 )
 
-# --- [1. 디자인 & CSS (화살표 복구)] ---
+# --- [1. 디자인 & CSS (수정됨)] ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
     html, body, [class*="css"]  { font-family: 'Noto Sans KR', sans-serif; color: #4E342E; }
     .stApp { background-color: #FFF3E0; }
     
-    /* 헤더 투명화 (내용은 가리되 공간은 유지) */
+    /* 사이드바(메뉴창) 배경색 지정 - 내용이 잘 보이게 */
+    section[data-testid="stSidebar"] {
+        background-color: #FFF3E0;
+        border-right: 1px solid #ddd;
+    }
+    
+    /* 헤더 투명화 */
     header { background-color: transparent !important; }
     
-    /* 불필요한 상단 데코레이션 숨김 */
+    /* 불필요한 장식 숨김 */
     [data-testid="stDecoration"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
     
-    /* [핵심] 사이드바 여는 화살표(>) 버튼 강제 소환 */
-    section[data-testid="stSidebar"] > div > div:nth-child(2) {
-        display: none; /* X버튼 숨김 방지 */
-    }
+    /* [수정] 메뉴 내용을 숨기던 범인 코드 삭제됨 */
     
+    /* 사이드바 여는 화살표(>) 버튼 디자인 */
     [data-testid="stSidebarCollapsedControl"] {
         display: block !important;
         visibility: visible !important;
-        color: #4E342E !important; /* 진한 갈색 아이콘 */
-        background-color: rgba(255, 255, 255, 0.5) !important; /* 반투명 흰색 배경 */
+        color: #4E342E !important;
+        background-color: rgba(255, 255, 255, 0.5) !important;
         border-radius: 8px;
         padding: 5px;
-        z-index: 1000002 !important; /* 맨 앞으로 가져오기 */
+        z-index: 1000002 !important;
         top: 10px !important;
         left: 10px !important;
     }
@@ -158,6 +162,7 @@ def get_pending_tasks_list():
 def login_page():
     st.markdown("<br><h1 style='text-align:center;'>🥐 조각달 업무수첩</h1>", unsafe_allow_html=True)
     
+    # 자동 로그인 로직
     try:
         if cookies.get("auto_login") == "true":
             sid, spw = cookies.get("uid"), cookies.get("upw")
@@ -244,7 +249,7 @@ def page_board(b_name, icon):
                         if not cmts.empty:
                             pcmts = cmts[cmts["post_id"].astype(str) == str(r["id"])]
                             for _, c in pcmts.iterrows():
-                                st.markdown(f"<div class='comment-box'><b>{c['author']}</b>: {c['content']} <span style='color:#aaa;Size:0.8em;'>({c['date']})</span></div>", unsafe_allow_html=True)
+                                st.markdown(f"<div class='comment-box'><b>{c['author']}</b>: {c['content']} <span style='color:#aaa;font-size:0.8em;'>({c['date']})</span></div>", unsafe_allow_html=True)
                         with st.form(f"c_{r['id']}"):
                             c1, c2 = st.columns([4,1])
                             ctxt = c1.text_input("댓글", label_visibility="collapsed")
@@ -311,7 +316,9 @@ def page_routine():
 
 def main():
     if "logged_in" not in st.session_state: st.session_state.logged_in = False
-    if not st.session_state.logged_in: login_page()
+    
+    if not st.session_state.logged_in:
+        login_page()
     else:
         with st.sidebar:
             st.title("🥐 조각달")
