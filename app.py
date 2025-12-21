@@ -10,7 +10,7 @@ from streamlit_gsheets import GSheetsConnection
 from streamlit_cookies_manager import CookieManager
 from PIL import Image
 
-# --- [이미지 처리 함수들] ---
+# --- [이미지 처리 함수] ---
 def image_to_base64(img):
     buffered = io.BytesIO()
     img.save(buffered, format="PNG")
@@ -55,7 +55,7 @@ if processed_icon:
         unsafe_allow_html=True
     )
 
-# --- [1. 디자인 & CSS] ---
+# --- [1. CSS 스타일] ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap');
@@ -208,9 +208,12 @@ def get_pending_tasks_list():
             if not is_done: pending.append(task)
     return pending
 
-# [헬퍼 함수] 승인 여부 체크 (대소문자 무시)
+# [핵심 수정] 천하무적 승인 체크 함수
 def check_approved(val):
-    return str(val).strip().lower() == "true"
+    # 값을 문자로 바꾸고, 공백 제거하고, 소문자로 바꿈
+    v = str(val).strip().lower()
+    # True, true, 1, 1.0, yes 등 긍정의 의미면 모두 통과!
+    return v in ["true", "1", "1.0", "yes", "y", "t"]
 
 # --- [4. 화면 구성] ---
 
@@ -227,7 +230,6 @@ def login_page():
     else:
         st.markdown("<h1 style='text-align:center;'>업무수첩</h1>", unsafe_allow_html=True)
 
-    # 자동 로그인
     try:
         if cookies.get("auto_login") == "true":
             sid, spw = cookies.get("uid"), cookies.get("upw")
@@ -238,7 +240,6 @@ def login_page():
                     users["password"] = users["password"].astype(str)
                     u = users[(users["username"] == sid) & (users["password"] == spw)]
                     if not u.empty:
-                        # [수정] 대소문자 무시하고 승인 여부 확인
                         if check_approved(u.iloc[0].get("approved", "False")):
                             st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"], "show_login_alert": True})
                             st.rerun()
@@ -259,7 +260,9 @@ def login_page():
                     users["password"] = users["password"].astype(str)
                     u = users[(users["username"] == uid) & (users["password"] == hpw)]
                     if not u.empty:
-                        # [수정] 대소문자 무시하고 승인 여부 확인
+                        # 디버깅용: 실제 값을 못 읽어오면 화면에 표시 (오류 해결 후엔 주석 처리 가능)
+                        # st.write(f"DB값: {u.iloc[0].get('approved')}") 
+                        
                         if check_approved(u.iloc[0].get("approved", "False")):
                             st.session_state.update({"logged_in": True, "name": u.iloc[0]["name"], "role": u.iloc[0]["role"], "show_login_alert": True})
                             if auto:
@@ -271,7 +274,7 @@ def login_page():
                                 if cookies.get("auto_login"): cookies["auto_login"] = "false"; cookies.save()
                             st.rerun()
                         else:
-                            st.warning("⏳ 아직 승인 대기 중입니다. 사장님께 문의하세요.")
+                            st.warning("⏳ 아직 승인 대기 중입니다. (Master 승인 필요)")
                     else: st.error("아이디 또는 비밀번호가 틀렸습니다.")
                 else: st.error("DB 접속 오류")
 
@@ -311,10 +314,12 @@ def page_staff_mgmt():
     if "approved" not in users.columns:
         users["approved"] = "False"
 
-    # [수정] 대소문자 무시하고 승인 대기 필터링
-    # 승인이 안 된(False, false, 빈칸 등) 사람만 추출
-    users["approved_norm"] = users["approved"].apply(lambda x: str(x).strip().lower())
-    pending_users = users[users["approved_norm"] != "true"]
+    # 승인 대기 목록 (천하무적 함수 활용)
+    # pandas apply로 필터링
+    users["is_approved_bool"] = users["approved"].apply(check_approved)
+    
+    # 승인 안 된 사람들 (False인 행)
+    pending_users = users[users["is_approved_bool"] == False]
     
     if not pending_users.empty:
         st.subheader("⏳ 승인 대기 요청")
@@ -328,23 +333,19 @@ def page_staff_mgmt():
                 
                 if c3.button("수락", key=f"approve_{row['username']}"):
                     users.loc[users["username"] == row["username"], "approved"] = "True"
-                    # 임시 컬럼 제거 후 저장
-                    if "approved_norm" in users.columns: del users["approved_norm"]
+                    if "is_approved_bool" in users.columns: del users["is_approved_bool"]
                     save("users", users)
                     st.rerun()
                 
                 if c4.button("거절", key=f"reject_{row['username']}"):
                     users = users[users["username"] != row["username"]]
-                    if "approved_norm" in users.columns: del users["approved_norm"]
+                    if "is_approved_bool" in users.columns: del users["is_approved_bool"]
                     save("users", users)
                     st.rerun()
         st.divider()
 
     st.subheader("✅ 정식 직원 목록")
-    # [수정] 대소문자 무시하고 승인된 사람 필터링
-    if "approved_norm" not in users.columns:
-         users["approved_norm"] = users["approved"].apply(lambda x: str(x).strip().lower())
-    active_users = users[users["approved_norm"] == "true"]
+    active_users = users[users["is_approved_bool"] == True]
     
     if not active_users.empty:
         for index, row in active_users.iterrows():
@@ -357,7 +358,7 @@ def page_staff_mgmt():
                 if row['username'] != "admin" and row['username'] != st.session_state['name']: 
                     if c4.button("삭제", key=f"del_active_{row['username']}"):
                         new_df = users[users["username"] != row['username']]
-                        if "approved_norm" in new_df.columns: del new_df["approved_norm"]
+                        if "is_approved_bool" in new_df.columns: del new_df["is_approved_bool"]
                         save("users", new_df)
                         st.rerun()
     else:
