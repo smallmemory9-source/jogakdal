@@ -38,7 +38,7 @@ st.set_page_config(
     page_title="조각달과자점 파트너", 
     page_icon="logo.png", 
     layout="wide", 
-    initial_sidebar_state="collapsed" # 사이드바 숨김
+    initial_sidebar_state="collapsed" 
 )
 
 processed_icon = get_processed_logo("logo.png", icon_size=(192, 192))
@@ -66,7 +66,7 @@ st.markdown("""
     [data-testid="stDecoration"] { display: none !important; }
     [data-testid="stStatusWidget"] { display: none !important; }
     
-    /* 상단 메뉴바 스타일 조정 */
+    /* 상단 메뉴바 선택 색상 */
     .nav-link-selected {
         background-color: #8D6E63 !important;
     }
@@ -84,10 +84,10 @@ st.markdown("""
     }
     .logo-title-container h1 { margin: 0 0 0 10px; font-size: 1.8rem; }
     
-    /* 상단 고정 헤더 영역 */
-    .top-header {
-        text-align: center;
-        padding-bottom: 10px;
+    /* 모바일용 메뉴바 패딩 제거 */
+    .container-xxl {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -406,7 +406,7 @@ def main():
     if not st.session_state.logged_in:
         login_page()
     else:
-        # [상단 헤더 영역] 로고 및 환영 인사
+        # [상단 헤더 영역]
         processed_logo_header = get_processed_logo("logo.png", icon_size=(50, 50))
         c1, c2 = st.columns([1, 6])
         with c1:
@@ -415,7 +415,7 @@ def main():
         with c2:
             st.markdown(f"<div style='padding-top:10px;'><b>{st.session_state['name']}</b>님, 오늘도 화이팅! 🥐</div>", unsafe_allow_html=True)
 
-        # [상단 가로 메뉴]
+        # [상단 메뉴바 최적화]
         menu_opts = ["본점", "작업장", "건의", "업무"]
         menu_icons = ['house', 'tools', 'lightbulb', 'check-square']
         if st.session_state['role'] == "Master":
@@ -427,9 +427,10 @@ def main():
         m = option_menu(None, menu_opts, icons=menu_icons, menu_icon="cast", default_index=0, 
                         orientation="horizontal",
                         styles={
-                            "container": {"padding": "0!important", "background-color": "#FFF3E0"},
+                            # [핵심 수정] 패딩 제거, 글자 크기 축소 (12px), 좌우 여백 최소화
+                            "container": {"padding": "0!important", "background-color": "#FFF3E0", "margin": "0"},
                             "icon": {"color": "#4E342E", "font-size": "14px"}, 
-                            "nav-link": {"font-size": "14px", "text-align": "center", "margin":"0px", "--hover-color": "#eee", "padding": "10px"},
+                            "nav-link": {"font-size": "12px", "text-align": "center", "margin":"0px", "--hover-color": "#eee", "padding": "5px 2px"},
                             "nav-link-selected": {"background-color": "#8D6E63"},
                         })
         
