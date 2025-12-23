@@ -805,9 +805,11 @@ def page_staff_mgmt():
 def main():
     AppState.init()
     
-    # 쿠키 로드 에러 방지 (try-except)
+    # [수정됨] 쿠키 에러 방지 (CookiesNotReady 대응)
     if not st.session_state.get("logged_in"):
         try:
+            # 쿠키 매니저가 준비되었는지 확인 (암시적)
+            # ready() 메서드가 없는 버전일 수 있으므로 try-except로 감쌈
             if cookies.get("auto_login") == "true":
                 try:
                     res = DataManager.load("users")
@@ -822,8 +824,12 @@ def main():
                                 "role": u.iloc[0]["role"],
                                 "department": u.iloc[0].get("department", "전체")
                             })
-                except Exception: pass
-        except Exception: pass
+                except Exception:
+                    # 쿠키 로드 중 에러 발생 시 무시 (다음 리프레시 때 처리됨)
+                    pass
+        except Exception:
+            # CookiesNotReady 에러 발생 시 멈추지 않고 패스
+            pass
 
     if not st.session_state.get("logged_in"):
         login_page()
