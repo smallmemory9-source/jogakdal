@@ -305,18 +305,19 @@ cookies = CookieManager()
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # ============================================================
-# [5. 데이터 로드/저장 - 개선된 버전]
+# [5. 데이터 로드/저장 - 동시성 처리 강화]
 # ============================================================
 class DataManager:
-    """데이터 관리 클래스 - 캐싱, 에러 처리, 재시도 로직 포함"""
+    """데이터 관리 클래스 - 캐싱, 에러 처리, 동시성 처리 포함"""
     
     @staticmethod
     def _is_cache_valid(key: str) -> bool:
-        """로컬 캐시 유효성 검사"""
+        """로컬 캐시 유효성 검사 - 동시성을 위해 짧은 TTL"""
         cache_time = st.session_state.get("cache_time", {}).get(key)
         if cache_time is None:
             return False
-        return (datetime.now() - cache_time).total_seconds() < CACHE_TTL
+        # 동시 작업을 위해 캐시 시간을 60초로 단축
+        return (datetime.now() - cache_time).total_seconds() < 60
     
     @staticmethod
     def _get_from_cache(key: str) -> Optional[pd.DataFrame]:
@@ -347,10 +348,7 @@ class DataManager:
     
     @staticmethod
     def load(key: str, force_refresh: bool = False) -> LoadResult:
-        """
-        데이터 로드 - 캐시 우선, 실패 시 명확한 에러 반환
-        """
-        # 강제 새로고침이 아니면 캐시 확인
+        """데이터 로드 - 캐시 우선, 실패 시 명확한 에러 반환"""
         if not force_refresh:
             cached = DataManager._get_from_cache(key)
             if cached is not None:
@@ -368,11 +366,10 @@ class DataManager:
             except Exception as e:
                 last_error = str(e)
                 if "429" in last_error or "Quota" in last_error.lower():
-                    time.sleep(2 ** i)  # 지수 백오프
+                    time.sleep(2 ** i)
                     continue
                 break
         
-        # 실패 시 캐시된 데이터라도 반환 (있다면)
         cached = st.session_state.get("data_cache", {}).get(key)
         if cached is not None:
             return LoadResult(
@@ -391,7 +388,17 @@ class DataManager:
     def save(key: str, df: pd.DataFrame, operation_desc: str = "") -> SaveResult:
         """
         데이터 저장 - 재시도 및 실패 시 큐잉
+        안전장치: 기존 데이터보다 현저히 적으면 저장 차단
         """
+        if key == "users":
+            cached = st.session_state.get("data_cache", {}).get(key)
+            if cached is not None and not cached.empty:
+                if len(df) < len(cached) * 0.5 and len(cached) >= 3:
+                    return SaveResult(
+                        success=False, 
+                        error_msg=f"안전장치 발동: 데이터가 너무 많이 줄었습니다 ({len(cached)}→{len(df)}). 저장을 차단합니다."
+                    )
+        
         max_retries = 3
         last_error = ""
         
@@ -407,7 +414,6 @@ class DataManager:
                     continue
                 break
         
-        # 실패 시 재시도 큐에 추가
         pending = st.session_state.get("pending_saves", [])
         pending.append({
             "key": key,
@@ -416,9 +422,115 @@ class DataManager:
             "timestamp": datetime.now().isoformat(),
             "error": last_error
         })
-        st.session_state["pending_saves"] = pending[-10:]  # 최근 10개만 유지
+        st.session_state["pending_saves"] = pending[-10:]
         
         return SaveResult(success=False, error_msg=last_error)
+    
+    @staticmethod
+    def append_row(key: str, new_row: dict, id_column: str = "id", operation_desc: str = "") -> SaveResult:
+        """
+        동시성 안전 행 추가 - 항상 최신 데이터에 추가
+        여러 사용자가 동시에 추가해도 데이터 손실 없음
+        """
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            # 1. 항상 최신 데이터 가져오기
+            result = DataManager.load(key, force_refresh=True)
+            if not result.success:
+                time.sleep(1)
+                continue
+            
+            current_df = result.data
+            
+            # 2. 새 ID 생성 (현재 최대값 + 1)
+            if id_column and id_column in new_row:
+                if current_df.empty:
+                    new_row[id_column] = 1
+                else:
+                    max_id = pd.to_numeric(current_df[id_column], errors='coerce').fillna(0).max()
+                    new_row[id_column] = int(max_id) + 1
+            
+            # 3. 새 행 추가
+            new_df = pd.DataFrame([new_row])
+            if current_df.empty:
+                updated_df = new_df
+            else:
+                updated_df = pd.concat([current_df, new_df], ignore_index=True)
+            
+            # 4. 저장 시도
+            save_result = DataManager.save(key, updated_df, operation_desc)
+            if save_result.success:
+                return save_result
+            
+            # 실패 시 재시도
+            time.sleep(0.5)
+        
+        return SaveResult(success=False, error_msg="여러 번 시도했지만 저장에 실패했습니다.")
+    
+    @staticmethod
+    def update_row(key: str, match_column: str, match_value: Any, updates: dict, operation_desc: str = "") -> SaveResult:
+        """
+        동시성 안전 행 수정 - 특정 행만 수정
+        """
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            result = DataManager.load(key, force_refresh=True)
+            if not result.success:
+                time.sleep(1)
+                continue
+            
+            current_df = result.data.copy()
+            
+            if current_df.empty:
+                return SaveResult(success=False, error_msg="데이터가 없습니다.")
+            
+            # 해당 행 찾아서 수정
+            mask = current_df[match_column].astype(str) == str(match_value)
+            if not mask.any():
+                return SaveResult(success=False, error_msg="해당 데이터를 찾을 수 없습니다.")
+            
+            for col, val in updates.items():
+                current_df.loc[mask, col] = val
+            
+            save_result = DataManager.save(key, current_df, operation_desc)
+            if save_result.success:
+                return save_result
+            
+            time.sleep(0.5)
+        
+        return SaveResult(success=False, error_msg="수정에 실패했습니다.")
+    
+    @staticmethod
+    def delete_row(key: str, match_column: str, match_value: Any, operation_desc: str = "") -> SaveResult:
+        """
+        동시성 안전 행 삭제
+        """
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            result = DataManager.load(key, force_refresh=True)
+            if not result.success:
+                time.sleep(1)
+                continue
+            
+            current_df = result.data.copy()
+            original_len = len(current_df)
+            
+            # 해당 행 삭제
+            current_df = current_df[current_df[match_column].astype(str) != str(match_value)]
+            
+            if len(current_df) == original_len:
+                return SaveResult(success=False, error_msg="삭제할 데이터를 찾을 수 없습니다.")
+            
+            save_result = DataManager.save(key, current_df, operation_desc)
+            if save_result.success:
+                return save_result
+            
+            time.sleep(0.5)
+        
+        return SaveResult(success=False, error_msg="삭제에 실패했습니다.")
     
     @staticmethod
     def retry_pending_saves() -> Tuple[int, int]:
@@ -814,16 +926,17 @@ def show_dashboard():
                 
                 st.markdown('<div class="confirm-btn">', unsafe_allow_html=True)
                 if st.button(f"✅ 확인 완료", key=f"dash_confirm_{note_id}", use_container_width=True):
-                    nl = pd.DataFrame([{
+                    # 동시성 안전 추가
+                    result = DataManager.append_row("inform_logs", {
                         "note_id": note_id,
                         "username": username,
                         "confirmed_at": datetime.now().strftime("%m-%d %H:%M")
-                    }])
-                    if inform_logs.empty:
-                        save("inform_logs", nl, "인폼 확인")
+                    }, id_column=None, operation_desc="인폼 확인")
+                    
+                    if result.success:
+                        st.rerun()
                     else:
-                        save("inform_logs", pd.concat([inform_logs, nl], ignore_index=True), "인폼 확인")
-                    st.rerun()
+                        st.error("저장 실패. 다시 시도해주세요.")
                 st.markdown('</div>', unsafe_allow_html=True)
                 st.markdown("")
     
@@ -859,20 +972,21 @@ def show_dashboard():
                     )
                     
                     if st.form_submit_button("✅ 업무 완료", use_container_width=True, type="primary"):
-                        nl = pd.DataFrame([{
+                        # 동시성 안전 추가
+                        result = DataManager.append_row("routine_log", {
                             "task_id": task_id,
                             "done_date": today,
                             "worker": username,
                             "memo": memo,
                             "created_at": datetime.now().strftime("%H:%M")
-                        }])
-                        if logs.empty:
-                            save("routine_log", nl, "업무 완료")
+                        }, id_column=None, operation_desc="업무 완료")
+                        
+                        if result.success:
+                            st.success(f"✅ '{task['task_name']}' 완료!")
+                            time.sleep(0.5)
+                            st.rerun()
                         else:
-                            save("routine_log", pd.concat([logs, nl], ignore_index=True), "업무 완료")
-                        st.success(f"✅ '{task['task_name']}' 완료!")
-                        time.sleep(0.5)
-                        st.rerun()
+                            st.error("저장 실패. 다시 시도해주세요.")
     
     # ===== 새 알림 상세 =====
     elif current_view == "notification":
@@ -1082,14 +1196,20 @@ def login_page():
                         
                         users = result.data
                         if users.empty:
-                            save_result = save("users", new_user, "회원가입")
+                            # 안전장치: 첫 사용자가 아닌데 empty면 저장 안함
+                            # 캐시에 데이터가 있었다면 통신 오류로 판단
+                            cached_users = st.session_state.get("data_cache", {}).get("users")
+                            if cached_users is not None and not cached_users.empty:
+                                st.error("⚠️ 서버 통신 오류입니다. 잠시 후 다시 시도해주세요.")
+                            else:
+                                # 진짜 첫 사용자
+                                save_result = save("users", new_user, "첫 회원가입")
+                                if save_result:
+                                    st.success("✅ 가입 신청이 완료되었습니다.")
                         else:
                             save_result = save("users", pd.concat([users, new_user], ignore_index=True), "회원가입")
-                        
-                        if save_result:
-                            st.success("✅ 가입 신청이 완료되었습니다. 관리자 승인을 기다려주세요.")
-                        else:
-                            st.error("신청 처리 중 오류가 발생했습니다.")
+                            if save_result:
+                                st.success("✅ 가입 신청이 완료되었습니다. 관리자 승인을 기다려주세요.")
 
 def page_inform():
     st.subheader("📢 인폼노트")
@@ -1131,33 +1251,23 @@ def page_inform():
                     if ic.strip() == "":
                         st.warning("내용을 입력해주세요.")
                     else:
-                        DataManager.clear_cache("inform_notes")
-                        df = load("inform_notes", force_refresh=True)
-                        
-                        nid = 1
-                        if not df.empty and "id" in df.columns:
-                            nid = pd.to_numeric(df["id"], errors='coerce').fillna(0).max() + 1
-                        
-                        new_note = pd.DataFrame([{
-                            "id": nid,
+                        new_note = {
+                            "id": 0,  # append_row에서 자동 생성
                             "target_date": target_date_input.strftime("%Y-%m-%d"),
                             "content": ic,
                             "author": username,
                             "priority": priority,
                             "created_at": datetime.now().strftime("%Y-%m-%d %H:%M")
-                        }])
+                        }
                         
-                        if df.empty:
-                            success = save("inform_notes", new_note, "인폼 등록")
-                        else:
-                            success = save("inform_notes", pd.concat([df, new_note], ignore_index=True), "인폼 등록")
+                        result = DataManager.append_row("inform_notes", new_note, "id", "인폼 등록")
                         
-                        if success:
+                        if result.success:
                             st.success("✅ 등록 완료")
                             time.sleep(0.5)
                             st.rerun()
                         else:
-                            st.error("등록 실패 - 잠시 후 재시도 버튼을 눌러주세요.")
+                            st.error(f"등록 실패: {result.error_msg}")
 
     # 인폼 목록 표시
     with st.spinner("로딩 중..."):
@@ -1217,16 +1327,17 @@ def page_inform():
                 if username not in confirmed_users:
                     st.markdown('<div class="confirm-btn">', unsafe_allow_html=True)
                     if st.button("확인함 ✅", key=f"confirm_{note_id}"):
-                        nl = pd.DataFrame([{
+                        # 동시성 안전 추가
+                        result = DataManager.append_row("inform_logs", {
                             "note_id": note_id,
                             "username": username,
                             "confirmed_at": datetime.now().strftime("%m-%d %H:%M")
-                        }])
-                        if logs.empty:
-                            save("inform_logs", nl, "인폼 확인")
+                        }, id_column=None, operation_desc="인폼 확인")
+                        
+                        if result.success:
+                            st.rerun()
                         else:
-                            save("inform_logs", pd.concat([logs, nl], ignore_index=True), "인폼 확인")
-                        st.rerun()
+                            st.error("저장 실패. 다시 시도해주세요.")
                     st.markdown('</div>', unsafe_allow_html=True)
                 else:
                     st.success("✅ 확인 완료")
@@ -1261,17 +1372,18 @@ def page_inform():
                                      placeholder="특이사항 작성 (@이름으로 멘션)")
                 if c2.form_submit_button("등록"):
                     if ctxt.strip():
-                        nc = pd.DataFrame([{
+                        # 동시성 안전 추가
+                        result = DataManager.append_row("comments", {
                             "post_id": f"inform_{note_id}",
                             "author": username,
                             "content": ctxt,
                             "date": datetime.now().strftime("%m-%d %H:%M")
-                        }])
-                        if cmts.empty:
-                            save("comments", nc, "댓글 등록")
+                        }, id_column=None, operation_desc="댓글 등록")
+                        
+                        if result.success:
+                            st.rerun()
                         else:
-                            save("comments", pd.concat([cmts, nc], ignore_index=True), "댓글 등록")
-                        st.rerun()
+                            st.error("댓글 등록 실패")
             
             st.markdown("---")
 
@@ -1279,13 +1391,23 @@ def page_staff_mgmt():
     st.subheader("👥 직원 관리")
     
     with st.spinner("로딩 중..."):
-        result = DataManager.load("users", force_refresh=False)
+        result = DataManager.load("users", force_refresh=True)  # 항상 최신 데이터
     
-    if not result.success or result.data.empty:
-        st.warning("데이터를 불러오지 못했습니다.")
+    if not result.success:
+        st.error("⚠️ 서버 연결 실패. 데이터를 수정하지 마시고 잠시 후 다시 시도해주세요.")
         if st.button("🔄 다시 시도"):
             DataManager.clear_cache("users")
             st.rerun()
+        return
+    
+    if result.data.empty:
+        # 캐시 확인 - 통신 오류인지 진짜 빈 건지 구분
+        cached = st.session_state.get("data_cache", {}).get("users")
+        if cached is not None and not cached.empty:
+            st.error("⚠️ 서버 통신 오류입니다. 데이터를 수정하지 마세요!")
+            st.info(f"캐시된 데이터: {len(cached)}명")
+            return
+        st.warning("등록된 직원이 없습니다.")
         return
     
     users = result.data.copy()
@@ -1305,15 +1427,20 @@ def page_staff_mgmt():
             with st.expander(f"⏳ {r['name']} ({r['username']}) - {r['department']}"):
                 c1, c2 = st.columns(2)
                 if c1.button("✅ 수락", key=f"ok_{r['username']}", use_container_width=True):
-                    users.loc[users["username"] == r["username"], "approved"] = "True"
-                    users_save = users.drop(columns=["is_approved_bool"])
-                    save("users", users_save, "직원 승인")
-                    st.rerun()
+                    # 동시성 안전 수정
+                    result = DataManager.update_row("users", "username", r["username"], 
+                                                    {"approved": "True"}, "직원 승인")
+                    if result.success:
+                        st.rerun()
+                    else:
+                        st.error("승인 실패")
                 if c2.button("❌ 거절", key=f"no_{r['username']}", use_container_width=True):
-                    users = users[users["username"] != r["username"]]
-                    users_save = users.drop(columns=["is_approved_bool"])
-                    save("users", users_save, "직원 거절")
-                    st.rerun()
+                    # 동시성 안전 삭제
+                    result = DataManager.delete_row("users", "username", r["username"], "직원 거절")
+                    if result.success:
+                        st.rerun()
+                    else:
+                        st.error("거절 처리 실패")
     
     st.divider()
     
@@ -1337,21 +1464,26 @@ def page_staff_mgmt():
                     
                     c3, c4 = st.columns(2)
                     if c3.form_submit_button("수정", type="primary", use_container_width=True):
-                        users.loc[users["username"] == r["username"], "role"] = new_role
-                        users.loc[users["username"] == r["username"], "department"] = new_dept
-                        users_save = users.drop(columns=["is_approved_bool"])
-                        save("users", users_save, "직원 정보 수정")
-                        st.success("✅ 수정 완료")
-                        time.sleep(0.5)
-                        st.rerun()
+                        # 동시성 안전 수정
+                        result = DataManager.update_row("users", "username", r["username"],
+                                                        {"role": new_role, "department": new_dept}, 
+                                                        "직원 정보 수정")
+                        if result.success:
+                            st.success("✅ 수정 완료")
+                            time.sleep(0.5)
+                            st.rerun()
+                        else:
+                            st.error("수정 실패")
                     
                     if c4.form_submit_button("삭제", type="secondary", use_container_width=True):
-                        users = users[users["username"] != r["username"]]
-                        users_save = users.drop(columns=["is_approved_bool"])
-                        save("users", users_save, "직원 삭제")
-                        st.warning("삭제됨")
-                        time.sleep(0.5)
-                        st.rerun()
+                        # 동시성 안전 삭제
+                        result = DataManager.delete_row("users", "username", r["username"], "직원 삭제")
+                        if result.success:
+                            st.warning("삭제됨")
+                            time.sleep(0.5)
+                            st.rerun()
+                        else:
+                            st.error("삭제 실패")
 
 def page_board(b_name: str, icon: str):
     st.subheader(f"{icon} {b_name}")
@@ -1373,27 +1505,24 @@ def page_board(b_name: str, icon: str):
                     if not tt.strip() or not ct.strip():
                         st.warning("제목과 내용을 입력해주세요.")
                     else:
-                        df = load("posts", force_refresh=True)
-                        nid = 1 if df.empty else pd.to_numeric(df["id"], errors='coerce').fillna(0).max() + 1
-                        
                         content = ct
                         if file_link.strip():
                             content += f"\n\n📎 첨부: {file_link}"
                         
-                        np_df = pd.DataFrame([{
-                            "id": nid,
+                        # 동시성 안전 추가
+                        result = DataManager.append_row("posts", {
+                            "id": 0,  # 자동 생성
                             "board_type": b_name,
                             "title": tt,
                             "content": content,
                             "author": username,
                             "date": datetime.now().strftime("%Y-%m-%d")
-                        }])
+                        }, "id", "게시글 등록")
                         
-                        if df.empty:
-                            save("posts", np_df, "게시글 등록")
+                        if result.success:
+                            st.rerun()
                         else:
-                            save("posts", pd.concat([df, np_df], ignore_index=True), "게시글 등록")
-                        st.rerun()
+                            st.error("등록 실패. 다시 시도해주세요.")
     elif user_role == "Staff" and b_name != "건의사항":
         st.info("💡 Staff는 읽기 및 댓글만 가능합니다.")
     
@@ -1419,9 +1548,12 @@ def page_board(b_name: str, icon: str):
                     
                     if can_del:
                         if st.button("🗑️ 삭제", key=f"del_{r['id']}"):
-                            posts = posts[posts["id"] != r["id"]]
-                            save("posts", posts, "게시글 삭제")
-                            st.rerun()
+                            # 동시성 안전 삭제
+                            result = DataManager.delete_row("posts", "id", r["id"], "게시글 삭제")
+                            if result.success:
+                                st.rerun()
+                            else:
+                                st.error("삭제 실패")
                     
                     # 댓글
                     if not cmts.empty:
@@ -1436,17 +1568,18 @@ def page_board(b_name: str, icon: str):
                         ctxt = c1.text_input("댓글", label_visibility="collapsed", placeholder="@이름으로 멘션")
                         if c2.form_submit_button("등록"):
                             if ctxt.strip():
-                                nc = pd.DataFrame([{
+                                # 동시성 안전 추가
+                                result = DataManager.append_row("comments", {
                                     "post_id": r["id"],
                                     "author": username,
                                     "content": ctxt,
                                     "date": datetime.now().strftime("%m-%d %H:%M")
-                                }])
-                                if cmts.empty:
-                                    save("comments", nc, "댓글 등록")
+                                }, id_column=None, operation_desc="댓글 등록")
+                                
+                                if result.success:
+                                    st.rerun()
                                 else:
-                                    save("comments", pd.concat([cmts, nc], ignore_index=True), "댓글 등록")
-                                st.rerun()
+                                    st.error("댓글 등록 실패")
 
 def page_routine():
     st.subheader("🔄 업무 체크")
@@ -1479,19 +1612,19 @@ def page_routine():
                     
                     if st.form_submit_button("➕ 추가", use_container_width=True):
                         if rn.strip():
-                            nid = 1 if defs.empty else pd.to_numeric(defs["id"], errors='coerce').fillna(0).max() + 1
-                            nr = pd.DataFrame([{
-                                "id": nid,
+                            # 동시성 안전 추가
+                            result = DataManager.append_row("routine_def", {
+                                "id": 0,  # 자동 생성
                                 "task_name": rn,
                                 "start_date": rs.strftime("%Y-%m-%d"),
                                 "cycle_type": rc,
                                 "interval_val": ri
-                            }])
-                            if defs.empty:
-                                save("routine_def", nr, "반복업무 추가")
+                            }, "id", "반복업무 추가")
+                            
+                            if result.success:
+                                st.rerun()
                             else:
-                                save("routine_def", pd.concat([defs, nr], ignore_index=True), "반복업무 추가")
-                            st.rerun()
+                                st.error("등록 실패")
                 
                 if not defs.empty:
                     st.write("**등록된 업무**")
@@ -1499,8 +1632,12 @@ def page_routine():
                         c1, c2 = st.columns([4, 1])
                         c1.text(f"• {r['task_name']} ({r['cycle_type']})")
                         if c2.button("🗑️", key=f"d_{r['id']}"):
-                            save("routine_def", defs[defs["id"] != r['id']], "반복업무 삭제")
-                            st.rerun()
+                            # 동시성 안전 삭제
+                            result = DataManager.delete_row("routine_def", "id", r['id'], "반복업무 삭제")
+                            if result.success:
+                                st.rerun()
+                            else:
+                                st.error("삭제 실패")
         
         st.divider()
         
@@ -1525,18 +1662,19 @@ def page_routine():
                     memo = c1.text_input("완료 메모", label_visibility="collapsed", 
                                          placeholder="특이사항 (선택)", key=f"memo_{t['id']}")
                     if c2.form_submit_button("완료 ✅"):
-                        nl = pd.DataFrame([{
+                        # 동시성 안전 추가
+                        result = DataManager.append_row("routine_log", {
                             "task_id": t["id"],
                             "done_date": today,
                             "worker": username,
                             "memo": memo,
                             "created_at": datetime.now().strftime("%H:%M")
-                        }])
-                        if logs.empty:
-                            save("routine_log", nl, "업무 완료")
+                        }, id_column=None, operation_desc="업무 완료")
+                        
+                        if result.success:
+                            st.rerun()
                         else:
-                            save("routine_log", pd.concat([logs, nl], ignore_index=True), "업무 완료")
-                        st.rerun()
+                            st.error("저장 실패")
     
     with t2:
         if not logs.empty and not defs.empty:
