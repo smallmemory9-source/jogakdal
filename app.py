@@ -123,20 +123,21 @@ if processed_icon:
         </head>
     """, unsafe_allow_html=True)
 
-# [디자인 수정] 아이콘 텍스트 겹침 완벽 해결
+# [CSS 수정 핵심] div, span 등 포괄적인 태그 제거 -> 글자 겹침 해결
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
 
-/* 1. 폰트를 '모든 요소(*)'가 아니라 '텍스트 요소'에만 지정하여 아이콘 깨짐 방지 */
-h1, h2, h3, h4, h5, h6, p, span, div, label, button, input, textarea, select, .stMarkdown, .stText {
+/* 1. 폰트 적용 대상을 '명확한 텍스트 요소'로만 한정 */
+h1, h2, h3, h4, h5, h6, p, label, .stMarkdown, .stTextInput input, .stTextArea textarea, .stSelectbox, .stButton button {
     font-family: 'Noto Sans KR', sans-serif !important;
     color: #333333 !important;
 }
 
-/* 2. 아이콘 폰트 보호 (Material Icons 등이 깨지지 않도록) */
+/* 2. 아이콘 폰트(Material Icons) 강제 보호 */
+/* 화살표 아이콘이 텍스트로 깨지는 것을 방지 */
 .material-icons, [class*="st-emotion-cache"], .st-emotion-cache-1pbqpgc {
-    font-family: inherit !important;
+    font-family: "Source Sans Pro", sans-serif !important; /* 스트림릿 기본 폰트로 복구 */
 }
 
 /* 버튼 스타일 */
@@ -174,8 +175,6 @@ header { background-color: transparent !important; }
     margin-bottom: 10px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
-.dashboard-card h1, .dashboard-card h3 { font-family: 'Noto Sans KR', sans-serif !important; }
-
 .dashboard-card-urgent { border-left: 4px solid #D32F2F; }
 .dashboard-card-warning { border-left: 4px solid #FFA000; }
 .dashboard-card-success { border-left: 4px solid #388E3C; }
@@ -200,6 +199,13 @@ header { background-color: transparent !important; }
 # ============================================================
 cookies = CookieManager()
 conn = st.connection("gsheets", type=GSheetsConnection)
+
+# [추가] 안전하게 쿠키 가져오는 함수 (에러 방지)
+def safe_get_cookie(key):
+    try:
+        return cookies.get(key)
+    except Exception:
+        return None
 
 # ============================================================
 # [5. 데이터 로드/저장]
@@ -245,15 +251,10 @@ class DataManager:
             try:
                 df = conn.read(worksheet=SHEET_NAMES[key], ttl=0)
                 if df is not None:
-                    # 데이터 검증 및 공백 제거
                     if not df.empty:
-                        # 컬럼명 공백 제거 (approved 뒤 공백 방지)
                         df.columns = df.columns.str.strip()
-                    
-                    # 필수 컬럼 체크
                     if not df.empty and key == "users" and "username" not in df.columns:
                         raise ValueError("헤더 오류")
-                    
                     DataManager._set_cache(key, df)
                     return LoadResult(data=df, success=True)
             except Exception as e:
@@ -370,7 +371,6 @@ class DataManager:
 def hash_password(password: str) -> str:
     return hashlib.sha256(str(password).encode()).hexdigest()
 
-# [중요 수정] "1.0"도 통과되도록 수정됨
 def check_approved(val) -> bool:
     v = str(val).strip().lower()
     return v in ["true", "1", "1.0", "yes", "y", "t"]
@@ -805,30 +805,29 @@ def page_staff_mgmt():
 def main():
     AppState.init()
     
-    # [수정됨] 쿠키 에러 방지 (CookiesNotReady 대응)
+    # [수정] 쿠키 에러(CookiesNotReady) 완전 방어
+    # 1. try-except로 감싸서 브라우저가 준비 안 됐을 때 튕기는 것 방지
     if not st.session_state.get("logged_in"):
         try:
-            # 쿠키 매니저가 준비되었는지 확인 (암시적)
-            # ready() 메서드가 없는 버전일 수 있으므로 try-except로 감쌈
-            if cookies.get("auto_login") == "true":
-                try:
-                    res = DataManager.load("users")
-                    if res.success and not res.data.empty:
-                        users = res.data
-                        users["username"] = users["username"].astype(str)
-                        u = users[users["username"] == cookies["uid"]]
-                        if not u.empty and check_approved(u.iloc[0]["approved"]):
-                            st.session_state.update({
-                                "logged_in": True,
-                                "name": u.iloc[0]["name"],
-                                "role": u.iloc[0]["role"],
-                                "department": u.iloc[0].get("department", "전체")
-                            })
-                except Exception:
-                    # 쿠키 로드 중 에러 발생 시 무시 (다음 리프레시 때 처리됨)
-                    pass
+            # 안전하게 쿠키 값 가져오기
+            auto_val = safe_get_cookie("auto_login")
+            uid_val = safe_get_cookie("uid")
+            
+            if auto_val == "true" and uid_val:
+                res = DataManager.load("users")
+                if res.success and not res.data.empty:
+                    users = res.data
+                    users["username"] = users["username"].astype(str)
+                    u = users[users["username"] == uid_val]
+                    if not u.empty and check_approved(u.iloc[0]["approved"]):
+                        st.session_state.update({
+                            "logged_in": True,
+                            "name": u.iloc[0]["name"],
+                            "role": u.iloc[0]["role"],
+                            "department": u.iloc[0].get("department", "전체")
+                        })
         except Exception:
-            # CookiesNotReady 에러 발생 시 멈추지 않고 패스
+            # 어떤 에러가 나더라도 무시하고 로그인 화면으로 유도
             pass
 
     if not st.session_state.get("logged_in"):
