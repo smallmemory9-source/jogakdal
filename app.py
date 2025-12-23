@@ -680,7 +680,7 @@ def show_notification_popup(tasks: List[dict], inform_notes: List[dict]):
         st.rerun()
 
 def show_dashboard():
-    """대시보드 - 오늘의 요약"""
+    """대시보드 - 오늘의 요약 (클릭하여 상세 보기 및 처리 가능)"""
     username = st.session_state['name']
     
     # 데이터 로드 (with spinner)
@@ -689,14 +689,17 @@ def show_dashboard():
         unconfirmed_informs = get_unconfirmed_inform_list(username)
         new_comments = get_new_comments_count(username)
         mentions = get_mentions_for_user(username)
+        logs = load("routine_log")
+        inform_logs = load("inform_logs")
     
     st.subheader("📊 오늘의 현황")
     
-    # 카드 레이아웃
+    # 카드 레이아웃 - 버튼으로 변경
     c1, c2, c3 = st.columns(3)
     
+    urgent_informs = [i for i in unconfirmed_informs if i.get("priority") == "긴급"]
+    
     with c1:
-        urgent_informs = [i for i in unconfirmed_informs if i.get("priority") == "긴급"]
         card_class = "dashboard-card-urgent" if urgent_informs else "dashboard-card-warning" if unconfirmed_informs else "dashboard-card-success"
         st.markdown(f"""
             <div class="dashboard-card {card_class}">
@@ -705,6 +708,10 @@ def show_dashboard():
                 {'<span class="urgent-badge">긴급 ' + str(len(urgent_informs)) + '건</span>' if urgent_informs else ''}
             </div>
         """, unsafe_allow_html=True)
+        if unconfirmed_informs:
+            if st.button("📢 인폼 확인하기", key="btn_inform", use_container_width=True):
+                st.session_state["dashboard_view"] = "inform"
+                st.rerun()
     
     with c2:
         card_class = "dashboard-card-warning" if pending_tasks else "dashboard-card-success"
@@ -714,31 +721,210 @@ def show_dashboard():
                 <h1 style="margin:0;">{len(pending_tasks)}</h1>
             </div>
         """, unsafe_allow_html=True)
+        if pending_tasks:
+            if st.button("🔄 업무 처리하기", key="btn_task", use_container_width=True):
+                st.session_state["dashboard_view"] = "task"
+                st.rerun()
     
     with c3:
-        card_class = "dashboard-card-warning" if new_comments or mentions else "dashboard-card-success"
+        total_notifications = new_comments + len(mentions)
+        card_class = "dashboard-card-warning" if total_notifications else "dashboard-card-success"
         st.markdown(f"""
             <div class="dashboard-card {card_class}">
                 <h3>💬 새 알림</h3>
-                <h1 style="margin:0;">{new_comments + len(mentions)}</h1>
+                <h1 style="margin:0;">{total_notifications}</h1>
                 <small>댓글 {new_comments} / 멘션 {len(mentions)}</small>
             </div>
         """, unsafe_allow_html=True)
+        if total_notifications:
+            if st.button("💬 알림 확인하기", key="btn_notif", use_container_width=True):
+                st.session_state["dashboard_view"] = "notification"
+                st.rerun()
     
-    # 긴급 인폼 바로 표시
-    if urgent_informs:
-        st.markdown("---")
-        st.markdown("### 🚨 긴급 확인 필요")
-        for note in urgent_informs[:3]:
-            preview = note['content'][:80] + "..." if len(note['content']) > 80 else note['content']
-            st.error(f"📌 {preview}")
+    st.markdown("---")
     
-    # 미완료 업무 표시
-    if pending_tasks:
-        st.markdown("---")
-        st.markdown("### 📋 오늘 할 일")
-        for task in pending_tasks[:5]:
-            st.warning(f"• {task['task_name']}")
+    # 상세 보기 영역
+    current_view = st.session_state.get("dashboard_view", None)
+    
+    # 뒤로가기 버튼
+    if current_view:
+        if st.button("← 대시보드로 돌아가기", key="back_to_dash"):
+            st.session_state["dashboard_view"] = None
+            st.rerun()
+        st.markdown("")
+    
+    # ===== 미확인 인폼 상세 =====
+    if current_view == "inform":
+        st.markdown("### 📢 미확인 인폼")
+        
+        if not unconfirmed_informs:
+            st.success("✅ 모든 인폼을 확인했습니다!")
+        else:
+            # 긴급 먼저 정렬
+            sorted_informs = sorted(unconfirmed_informs, 
+                                   key=lambda x: (0 if x.get("priority") == "긴급" else 1))
+            
+            for note in sorted_informs:
+                note_id = str(note["id"])
+                is_urgent = note.get("priority") == "긴급"
+                card_class = "inform-card-urgent" if is_urgent else "inform-card"
+                priority_badge = '<span class="urgent-badge">긴급</span>' if is_urgent else '<span class="normal-badge">일반</span>'
+                
+                content_html = highlight_mentions(note['content'])
+                
+                st.markdown(f"""
+                    <div class="{card_class}">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-size:0.9em; color:#8D6E63; font-weight:bold;">
+                                📅 {note['target_date']} | ✍️ {note['author']}
+                            </span>
+                            {priority_badge}
+                        </div>
+                        <div style="white-space: pre-wrap; line-height:1.6; font-size:1.05em; margin-top:10px; color:#333;">
+                            {content_html}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                st.markdown('<div class="confirm-btn">', unsafe_allow_html=True)
+                if st.button(f"✅ 확인 완료", key=f"dash_confirm_{note_id}", use_container_width=True):
+                    nl = pd.DataFrame([{
+                        "note_id": note_id,
+                        "username": username,
+                        "confirmed_at": datetime.now().strftime("%m-%d %H:%M")
+                    }])
+                    if inform_logs.empty:
+                        save("inform_logs", nl, "인폼 확인")
+                    else:
+                        save("inform_logs", pd.concat([inform_logs, nl], ignore_index=True), "인폼 확인")
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+                st.markdown("")
+    
+    # ===== 미완료 업무 상세 =====
+    elif current_view == "task":
+        st.markdown("### 🔄 미완료 업무")
+        today = date.today().strftime("%Y-%m-%d")
+        
+        if not pending_tasks:
+            st.success("🎉 모든 업무를 완료했습니다!")
+        else:
+            for task in pending_tasks:
+                task_id = task["id"]
+                
+                st.markdown(f"""
+                    <div style='padding:15px; border:2px solid #FFCDD2; background:#FFEBEE; 
+                         border-radius:12px; margin-bottom:10px;'>
+                        <div style="font-size:1.1em; font-weight:bold; color:#C62828;">
+                            📋 {task['task_name']}
+                        </div>
+                        <div style="font-size:0.85em; color:#888; margin-top:5px;">
+                            주기: {task['cycle_type']} | 시작일: {task.get('start_date', '-')}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                with st.form(f"dash_complete_{task_id}"):
+                    memo = st.text_input(
+                        "완료 메모", 
+                        placeholder="특이사항이 있으면 입력 (선택)",
+                        label_visibility="collapsed",
+                        key=f"dash_memo_{task_id}"
+                    )
+                    
+                    if st.form_submit_button("✅ 업무 완료", use_container_width=True, type="primary"):
+                        nl = pd.DataFrame([{
+                            "task_id": task_id,
+                            "done_date": today,
+                            "worker": username,
+                            "memo": memo,
+                            "created_at": datetime.now().strftime("%H:%M")
+                        }])
+                        if logs.empty:
+                            save("routine_log", nl, "업무 완료")
+                        else:
+                            save("routine_log", pd.concat([logs, nl], ignore_index=True), "업무 완료")
+                        st.success(f"✅ '{task['task_name']}' 완료!")
+                        time.sleep(0.5)
+                        st.rerun()
+    
+    # ===== 새 알림 상세 =====
+    elif current_view == "notification":
+        st.markdown("### 💬 새 알림")
+        
+        # 멘션 알림
+        if mentions:
+            st.markdown("#### 🔔 나를 멘션한 댓글")
+            for m in mentions:
+                content_html = highlight_mentions(str(m.get('content', '')))
+                st.markdown(f"""
+                    <div class="comment-box" style="border-left: 3px solid #1565C0;">
+                        <div style="font-weight:bold; color:#1565C0;">
+                            {m.get('author', '')} 님이 나를 멘션했습니다
+                        </div>
+                        <div style="margin-top:5px;">{content_html}</div>
+                        <div style="font-size:0.8em; color:#888; margin-top:5px;">
+                            {m.get('date', '')}
+                        </div>
+                    </div>
+                """, unsafe_allow_html=True)
+                st.markdown("")
+        
+        # 새 댓글 알림
+        if new_comments > 0:
+            st.markdown("#### 💬 내 글의 새 댓글")
+            
+            posts = load("posts")
+            comments = load("comments")
+            
+            if not posts.empty and not comments.empty:
+                my_posts = posts[posts["author"] == username]
+                today_str = date.today().strftime("%m-%d")
+                
+                for _, post in my_posts.iterrows():
+                    post_comments = comments[
+                        (comments["post_id"].astype(str) == str(post["id"])) &
+                        (comments["date"].str.startswith(today_str)) &
+                        (comments["author"] != username)
+                    ]
+                    
+                    if not post_comments.empty:
+                        st.markdown(f"""
+                            <div style="background:#E3F2FD; padding:10px; border-radius:8px; margin-bottom:5px;">
+                                <div style="font-weight:bold;">📝 {post['title']}</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+                        
+                        for _, c in post_comments.iterrows():
+                            content_html = highlight_mentions(str(c['content']))
+                            st.markdown(f"""
+                                <div class="comment-box">
+                                    <b>{c['author']}</b> ({c['date']}): {content_html}
+                                </div>
+                            """, unsafe_allow_html=True)
+                        st.markdown("")
+        
+        if not mentions and new_comments == 0:
+            st.success("✅ 새로운 알림이 없습니다!")
+    
+    # ===== 기본 대시보드 뷰 (요약) =====
+    else:
+        # 긴급 인폼 미리보기
+        if urgent_informs:
+            st.markdown("### 🚨 긴급 확인 필요")
+            for note in urgent_informs[:2]:
+                preview = note['content'][:80] + "..." if len(note['content']) > 80 else note['content']
+                st.error(f"📌 {preview}")
+            if len(urgent_informs) > 2:
+                st.caption(f"외 {len(urgent_informs) - 2}건 더...")
+        
+        # 미완료 업무 미리보기
+        if pending_tasks:
+            st.markdown("### 📋 오늘 할 일")
+            for task in pending_tasks[:3]:
+                st.warning(f"• {task['task_name']}")
+            if len(pending_tasks) > 3:
+                st.caption(f"외 {len(pending_tasks) - 3}건 더...")
 
 def show_search():
     """검색 기능"""
