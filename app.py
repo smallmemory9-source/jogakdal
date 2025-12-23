@@ -6,7 +6,7 @@ import io
 import base64
 import uuid
 import pytz
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor
 from streamlit_option_menu import option_menu
 from streamlit_gsheets import GSheetsConnection
@@ -19,7 +19,7 @@ from typing import Optional, List, Dict, Any, Tuple
 # ============================================================
 # [0. 상수 및 설정]
 # ============================================================
-KST = pytz.timezone('Asia/Seoul')
+KST = pytz.timezone("Asia/Seoul")
 
 def get_now():
     return datetime.now(KST)
@@ -43,13 +43,11 @@ SHEET_NAMES = {
     "routine_log": "routine_log",
     "inform_notes": "inform_notes",
     "inform_logs": "inform_logs",
-    # [추가] 토큰 세션(있으면 사용, 없어도 앱은 동작)
-    "sessions": "sessions"
+    # (선택) 토큰 자동로그인용 신규 시트 - 있으면 사용, 없으면 기존 방식 fallback
+    "sessions": "sessions",
 }
 
 DEPARTMENTS = ["전체", "본점", "작업장"]
-
-# 게시글 상태/담당자/마감 (기존 데이터 없으면 기본값으로 처리)
 POST_STATUS = ["접수", "진행중", "완료", "보류"]
 
 # ============================================================
@@ -71,8 +69,8 @@ class AppState:
     def init():
         defaults = {
             "logged_in": False,
-            "name": "",         # 표시용 이름
-            "username": "",     # [추가] 로그인 ID (권한/관리에서 필수)
+            "name": "",          # 표시용 이름
+            "username": "",      # 로그인 ID
             "role": "",
             "department": "전체",
             "show_popup_on_login": False,
@@ -83,6 +81,8 @@ class AppState:
             "dashboard_view": None,
             "inform_date": get_now().date(),
             "show_search": False,
+            # [추가] 홈/팝업 최소 프리패치 완료 플래그
+            "boot_home_loaded": False,
         }
         for k, v in defaults.items():
             if k not in st.session_state:
@@ -120,27 +120,34 @@ st.set_page_config(
     page_title="조각달 업무수첩",
     page_icon="logo.png",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="collapsed",
 )
 
 processed_icon = get_processed_logo("logo.png", icon_size=(192, 192))
 if processed_icon:
     icon_base64 = image_to_base64(processed_icon)
-    st.markdown(f"""
+    st.markdown(
+        f"""
         <head>
             <link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,{icon_base64}">
             <link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,{icon_base64}">
         </head>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
-st.markdown("""
+st.markdown(
+    """
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
 @import url("https://fonts.googleapis.com/icon?family=Material+Icons");
+
 html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; color: #333333; }
-.material-icons, [data-testid="stExpanderToggleIcon"] > svg, [data-testid="stExpanderToggleIcon"] {
-    font-family: 'Material Icons' !important;
-}
+
+.material-icons,
+[data-testid="stExpanderToggleIcon"] > svg,
+[data-testid="stExpanderToggleIcon"] { font-family: 'Material Icons' !important; }
+
 .stButton > button {
     background-color: #8D6E63 !important;
     color: white !important;
@@ -152,26 +159,42 @@ html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; color: #33
 }
 .confirm-btn > button { background-color: #2E7D32 !important; }
 .retry-btn > button { background-color: #E65100 !important; }
+
 .stApp { background-color: #FFF3E0; }
+
 header { visibility: hidden; }
 [data-testid="stDecoration"] { display: none; }
 [data-testid="stStatusWidget"] { display: none; }
 
-.summary-container { display:flex; flex-direction:row; justify-content:space-between; gap:10px; margin-bottom:15px; overflow-x:auto;}
-.summary-card { flex:1; background:white; border-radius:12px; padding:12px; text-align:center; box-shadow:0 2px 4px rgba(0,0,0,0.05); min-width:90px;}
-.summary-title { font-size:0.8rem; color:#666; margin-bottom:5px; }
-.summary-value { font-size:1.5rem; font-weight:bold; color:#333; }
-.summary-alert { color:#D32F2F !important; }
-
-.inform-item { background:white; border-left:4px solid #8D6E63; padding:10px; margin-bottom:8px; border-radius:4px; box-shadow:0 1px 2px rgba(0,0,0,0.05);}
-.inform-urgent { border-left-color:#D32F2F; background-color:#FFEBEE; }
-
-.logo-title-container { display:flex; align-items:center; justify-content:center; margin-bottom:10px; }
-.logo-title-container h1 { margin:0 0 0 10px; font-size:1.5rem; color:#4E342E; }
-
-.network-status { position:fixed; top:10px; right:10px; padding:5px 10px; border-radius:20px; font-size:0.75rem; z-index:9999;
-    background:#FFEBEE; color:#C62828; border:1px solid #FFCDD2;
+.summary-container {
+    display: flex; flex-direction: row; justify-content: space-between;
+    gap: 10px; margin-bottom: 15px; overflow-x: auto;
 }
+.summary-card {
+    flex: 1; background: white; border-radius: 12px; padding: 12px;
+    text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    min-width: 90px;
+}
+.summary-title { font-size: 0.8rem; color: #666; margin-bottom: 5px; }
+.summary-value { font-size: 1.5rem; font-weight: bold; color: #333; }
+.summary-alert { color: #D32F2F !important; }
+
+.inform-item {
+    background: white; border-left: 4px solid #8D6E63;
+    padding: 10px; margin-bottom: 8px; border-radius: 4px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.inform-urgent { border-left-color: #D32F2F; background-color: #FFEBEE; }
+
+.logo-title-container { display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+.logo-title-container h1 { margin: 0 0 0 10px; font-size: 1.5rem; color: #4E342E; }
+
+.network-status {
+    position: fixed; top: 10px; right: 10px; padding: 5px 10px;
+    border-radius: 20px; font-size: 0.75rem; z-index: 9999;
+    background: #FFEBEE; color: #C62828; border: 1px solid #FFCDD2;
+}
+
 button[data-baseweb="tab"] { font-size: 0.9rem !important; }
 
 /* 게시글 배지 */
@@ -181,7 +204,9 @@ button[data-baseweb="tab"] { font-size: 0.9rem !important; }
 .badge-hold { background:#ECEFF1; color:#455A64; border:1px solid #CFD8DC; }
 .badge-new { background:#E3F2FD; color:#1565C0; border:1px solid #BBDEFB; }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 # ============================================================
 # [4. 쿠키 및 DB 연결]
@@ -211,14 +236,13 @@ def safe_set_cookie(key, val):
         pass
 
 # ============================================================
-# [5. 데이터 로드/저장 (충돌 방지 + 속도 최적화)]
+# [5. DataManager - 충돌 완화 + 캐시 + (홈/팝업) 최소 프리패치]
 # ============================================================
 class DataManager:
     CACHE_TTL = 600
 
-    # append성 시트들은 row_uuid 기반 union-merge로 "동시저장 덮어쓰기"를 줄인다.
-    # (users / routine_def 같은 "정의" 시트는 제외)
-    APPEND_LIKE_KEYS = {"posts", "comments", "routine_log", "inform_logs", "inform_notes"}  # inform_notes는 작성이 append 성격
+    # append-like: row_uuid 기반 union merge 저장으로 동시저장 덮어쓰기 완화
+    APPEND_LIKE_KEYS = {"posts", "comments", "routine_log", "inform_logs", "inform_notes"}
 
     @staticmethod
     def _is_cache_valid(key: str) -> bool:
@@ -257,17 +281,14 @@ class DataManager:
             return pd.DataFrame()
         if not df.empty:
             df.columns = df.columns.str.strip()
-        # 필수 컬럼 방어
-        if key == "users" and not df.empty and "username" not in df.columns:
+        if key == "users" and (df is not None) and (not df.empty) and ("username" not in df.columns):
             raise ValueError("users 헤더 오류(username 없음)")
         return df
 
     @staticmethod
     def _sheet_exists(key: str) -> bool:
-        # streamlit_gsheets는 "없으면 예외"가 일반적이라 load로 간접 체크
         try:
-            df = conn.read(worksheet=SHEET_NAMES[key], ttl=0)
-            _ = df  # just access
+            _ = conn.read(worksheet=SHEET_NAMES[key], ttl=0)
             return True
         except Exception:
             return False
@@ -279,7 +300,7 @@ class DataManager:
             if cached is not None:
                 return LoadResult(data=cached, success=True)
 
-        for i in range(3):
+        for _ in range(3):
             try:
                 df = conn.read(worksheet=SHEET_NAMES[key], ttl=0)
                 df = DataManager._normalize_df(key, df)
@@ -294,29 +315,21 @@ class DataManager:
             return LoadResult(data=cached, success=False, error_msg="캐시 사용")
         return LoadResult(data=pd.DataFrame(), success=False, error_msg="로드 실패")
 
-    # ---------- [핵심] 충돌 방지용 merge 저장 ----------
     @staticmethod
     def _merge_append_like(latest: pd.DataFrame, mine: pd.DataFrame, unique_col: str = "row_uuid") -> pd.DataFrame:
-        """
-        append성 데이터에서 동시저장 덮어쓰기를 줄이기 위해:
-        - 최신(latest)과 내 변경(mine)을 union
-        - unique_col 기준으로 중복 제거(내 데이터 우선)
-        """
         if latest is None or latest.empty:
-            return mine.copy()
+            return mine.copy() if mine is not None else pd.DataFrame()
         if mine is None or mine.empty:
             return latest.copy()
 
         a = latest.copy()
         b = mine.copy()
 
-        # unique_col 없으면 생성(기존 데이터 호환)
         if unique_col not in a.columns:
             a[unique_col] = [str(uuid.uuid4()) for _ in range(len(a))]
         if unique_col not in b.columns:
             b[unique_col] = [str(uuid.uuid4()) for _ in range(len(b))]
 
-        # concat 후 중복 제거 (mine 우선이므로 뒤에 mine을 둔다)
         merged = pd.concat([a, b], ignore_index=True)
         merged[unique_col] = merged[unique_col].astype(str)
         merged = merged.drop_duplicates(subset=[unique_col], keep="last")
@@ -324,19 +337,17 @@ class DataManager:
 
     @staticmethod
     def save(key: str, df: pd.DataFrame, operation_desc: str = "") -> SaveResult:
-        # users 보호 로직 유지
+        # users 대량삭제 보호(기존 유지)
         if key == "users":
             cached = st.session_state.get("data_cache", {}).get(key)
             if cached is not None and not cached.empty:
                 if len(df) < len(cached) * 0.5:
                     return SaveResult(success=False, error_msg="데이터 보호: 대량 삭제 감지됨")
 
-        for i in range(3):
+        for _ in range(3):
             try:
-                # [추가] append-like는 저장 직전에 최신을 한번 더 읽고 merge 후 저장
                 if key in DataManager.APPEND_LIKE_KEYS:
                     latest = DataManager.load(key, force_refresh=True).data
-                    # df에는 최신에 없던 row_uuid가 포함될 수 있으므로 union merge
                     df_to_save = DataManager._merge_append_like(latest, df, unique_col="row_uuid")
                 else:
                     df_to_save = df
@@ -348,24 +359,19 @@ class DataManager:
                 time.sleep(0.5)
                 continue
 
-        # 실패 시 pending_saves 저장(기존 유지)
         pending = st.session_state.get("pending_saves", [])
-        pending.append({
-            "key": key,
-            "data": df.to_dict(),
-            "operation": operation_desc,
-            "timestamp": get_now().isoformat()
-        })
+        pending.append(
+            {"key": key, "data": df.to_dict(), "operation": operation_desc, "timestamp": get_now().isoformat()}
+        )
         st.session_state["pending_saves"] = pending[-10:]
         return SaveResult(success=False, error_msg="저장 실패")
 
     @staticmethod
     def append_row(key: str, new_row: dict, id_column: str = "id", operation_desc: str = "") -> SaveResult:
-        # [추가] row_uuid 부여: 동시저장 merge 기준
         if key in DataManager.APPEND_LIKE_KEYS:
             new_row.setdefault("row_uuid", str(uuid.uuid4()))
 
-        for attempt in range(3):
+        for _ in range(3):
             result = DataManager.load(key, force_refresh=True)
             if not result.success and result.data.empty:
                 time.sleep(0.5)
@@ -373,20 +379,18 @@ class DataManager:
 
             current_df = result.data
 
-            # id 자동부여(기존 유지)
             if id_column and id_column not in new_row:
                 if current_df.empty:
                     new_row[id_column] = 1
                 else:
                     try:
-                        max_id = pd.to_numeric(current_df[id_column], errors='coerce').fillna(0).max()
+                        max_id = pd.to_numeric(current_df[id_column], errors="coerce").fillna(0).max()
                         new_row[id_column] = int(max_id) + 1
                     except:
                         new_row[id_column] = len(current_df) + 1
 
             new_df = pd.DataFrame([new_row])
             updated_df = pd.concat([current_df, new_df], ignore_index=True) if not current_df.empty else new_df
-
             save_result = DataManager.save(key, updated_df, operation_desc)
             if save_result.success:
                 return save_result
@@ -396,11 +400,12 @@ class DataManager:
 
     @staticmethod
     def update_row(key: str, match_column: str, match_value: Any, updates: dict, operation_desc: str = "") -> SaveResult:
-        for attempt in range(3):
+        for _ in range(3):
             result = DataManager.load(key, force_refresh=True)
             if not result.success:
                 time.sleep(0.5)
                 continue
+
             current_df = result.data.copy()
             if current_df.empty or match_column not in current_df.columns:
                 return SaveResult(success=False, error_msg="대상 없음")
@@ -421,11 +426,12 @@ class DataManager:
 
     @staticmethod
     def delete_row(key: str, match_column: str, match_value: Any, operation_desc: str = "") -> SaveResult:
-        for attempt in range(3):
+        for _ in range(3):
             result = DataManager.load(key, force_refresh=True)
             if not result.success:
                 time.sleep(0.5)
                 continue
+
             current_df = result.data.copy()
             if current_df.empty or match_column not in current_df.columns:
                 return SaveResult(success=False, error_msg="삭제 실패(컬럼 없음)")
@@ -455,22 +461,36 @@ class DataManager:
         st.session_state["pending_saves"] = still_pending
         return (success_count, len(still_pending))
 
+    # ---------- 프리패치 ----------
+    @staticmethod
+    def prefetch(keys: List[str]):
+        """지정 시트만 병렬 로드"""
+        def load_one(k):
+            try:
+                DataManager.load(k)
+            except:
+                pass
+
+        with ThreadPoolExecutor() as ex:
+            ex.map(load_one, keys)
+
+    @staticmethod
+    def prefetch_home_popup():
+        """로그인 직후 홈/팝업에 필요한 최소 시트만 먼저 로드 (속도 핵심)"""
+        keys = ["routine_def", "routine_log", "inform_notes", "inform_logs"]
+        # 홈에서 댓글/멘션까지 로그인 직후 즉시 보여주고 싶으면 아래 두 줄 활성화
+        # keys += ["posts", "comments"]
+        if DataManager._sheet_exists("sessions"):
+            keys.append("sessions")
+        DataManager.prefetch(keys)
+
     @staticmethod
     def prefetch_all_data():
+        """기존 전체 프리패치 (필요한 시점에만 호출 권장)"""
         target_sheets = ["users", "routine_def", "routine_log", "inform_notes", "inform_logs", "posts", "comments"]
-        # sessions는 있으면 읽고, 없으면 무시
         if DataManager._sheet_exists("sessions"):
             target_sheets.append("sessions")
-
-        if all(DataManager._is_cache_valid(sheet) for sheet in target_sheets if sheet in st.session_state.get("cache_time", {}) or True):
-            # 위 조건은 간단화. 실제로는 아래에서 load가 캐시로 빠르게 끝나므로 과도 체크는 생략.
-            pass
-
-        def load_one(key):
-            DataManager.load(key)
-
-        with ThreadPoolExecutor() as executor:
-            executor.map(load_one, target_sheets)
+        DataManager.prefetch(target_sheets)
 
 # ============================================================
 # [6. 유틸리티 함수]
@@ -484,28 +504,7 @@ def check_approved(val) -> bool:
 
 def highlight_mentions(text: str) -> str:
     import re
-    return re.sub(r'@(\S+)', r'<span style="color:#1565C0; font-weight:bold;">@\1</span>', str(text))
-
-def is_task_due(start_date_str, cycle_type, interval_val) -> bool:
-    try:
-        if pd.isna(start_date_str) or str(start_date_str).strip() == "":
-            return False
-        start_date = datetime.strptime(str(start_date_str), "%Y-%m-%d").date()
-        today = get_now().date()
-        if today < start_date:
-            return False
-        delta_days = (today - start_date).days
-        if cycle_type == "매일":
-            return True
-        elif cycle_type == "매주":
-            return delta_days % 7 == 0
-        elif cycle_type == "매월":
-            return today.day == start_date.day
-        elif cycle_type == "N일 간격":
-            return delta_days % int(interval_val) == 0
-        return False
-    except:
-        return False
+    return re.sub(r"@(\S+)", r'<span style="color:#1565C0; font-weight:bold;">@\1</span>', str(text))
 
 def badge_for_status(status: str) -> str:
     s = (status or "").strip()
@@ -518,50 +517,95 @@ def badge_for_status(status: str) -> str:
     return '<span class="badge badge-new">접수</span>'
 
 # ============================================================
-# [7. 비즈니스 로직]
+# [7. 비즈니스 로직 - (팝업/홈) 최적화 버전]
 # ============================================================
 def get_pending_tasks_list() -> List[dict]:
-    result_def = DataManager.load("routine_def")
-    result_log = DataManager.load("routine_log")
-    if not result_def.success:
+    """
+    (속도 개선) 루프 기반 필터링 -> pandas 벡터화 + set membership
+    """
+    res_def = DataManager.load("routine_def")
+    res_log = DataManager.load("routine_log")
+    if not res_def.success or res_def.data.empty:
         return []
-    defs, logs = result_def.data, result_log.data
+
+    defs = res_def.data.copy()
+    logs = res_log.data.copy() if res_log.success and not res_log.data.empty else pd.DataFrame()
+
+    # 컬럼 방어
+    need_cols = ["id", "task_name", "start_date", "cycle_type"]
+    for c in need_cols:
+        if c not in defs.columns:
+            return []
+
+    today = get_now().date()
+    today_str = get_today_str()
+
+    defs["start_date_dt"] = pd.to_datetime(defs["start_date"], errors="coerce").dt.date
+    defs = defs[defs["start_date_dt"].notna()]
+    defs = defs[defs["start_date_dt"] <= today]
     if defs.empty:
         return []
-    today_str = get_today_str()
-    pending = []
-    for _, task in defs.iterrows():
-        if is_task_due(task.get("start_date"), task.get("cycle_type"), task.get("interval_val", 1)):
-            is_done = False
-            if not logs.empty:
-                done = logs[(logs["task_id"].astype(str) == str(task["id"])) & (logs["done_date"] == today_str)]
-                if not done.empty:
-                    is_done = True
-            if not is_done:
-                pending.append(dict(task))
-    return pending
+
+    delta = (pd.to_datetime(today) - pd.to_datetime(defs["start_date_dt"])).dt.days
+
+    due = pd.Series(False, index=defs.index)
+    due |= (defs["cycle_type"] == "매일")
+    due |= (defs["cycle_type"] == "매주") & (delta % 7 == 0)
+    due |= (defs["cycle_type"] == "매월") & (pd.Series([today.day] * len(defs), index=defs.index) ==
+                                             pd.Series([d.day for d in defs["start_date_dt"]], index=defs.index))
+
+    if "interval_val" in defs.columns:
+        iv = pd.to_numeric(defs["interval_val"], errors="coerce").fillna(1).astype(int)
+        due |= (defs["cycle_type"] == "N일 간격") & (delta % iv == 0)
+
+    due_defs = defs[due].copy()
+    if due_defs.empty:
+        return []
+
+    done_ids = set()
+    if not logs.empty and ("task_id" in logs.columns) and ("done_date" in logs.columns):
+        done_ids = set(
+            logs.loc[logs["done_date"].astype(str) == today_str, "task_id"].astype(str).tolist()
+        )
+
+    due_defs["id_str"] = due_defs["id"].astype(str)
+    pending = due_defs[~due_defs["id_str"].isin(done_ids)]
+    return pending.drop(columns=["start_date_dt", "id_str"], errors="ignore").to_dict("records")
 
 def get_unconfirmed_inform_list(username: str) -> List[dict]:
-    res_informs = DataManager.load("inform_notes")
-    res_logs = DataManager.load("inform_logs")
-    if not res_informs.success or res_informs.data.empty:
+    """
+    (속도 개선) 오늘 인폼 + 내 확인 로그만 set으로 빠르게 계산
+    """
+    res_n = DataManager.load("inform_notes")
+    res_l = DataManager.load("inform_logs")
+
+    if not res_n.success or res_n.data.empty:
         return []
-    informs = res_informs.data
-    logs = res_logs.data if res_logs.success else pd.DataFrame()
+
+    notes = res_n.data.copy()
+    if "target_date" not in notes.columns or "id" not in notes.columns:
+        return []
+
     today_str = get_today_str()
-    if "target_date" not in informs.columns:
+    today_notes = notes[notes["target_date"].astype(str) == today_str].copy()
+    if today_notes.empty:
         return []
-    today_informs = informs[informs["target_date"] == today_str]
-    if today_informs.empty:
-        return []
-    unconfirmed = []
-    for _, note in today_informs.iterrows():
-        is_checked = False
-        if not logs.empty and "note_id" in logs.columns and "username" in logs.columns:
-            is_checked = not logs[(logs["note_id"].astype(str) == str(note["id"])) & (logs["username"] == username)].empty
-        if not is_checked:
-            unconfirmed.append(dict(note))
-    return unconfirmed
+
+    logs = res_l.data.copy() if res_l.success and not res_l.data.empty else pd.DataFrame()
+    if logs.empty or "note_id" not in logs.columns or "username" not in logs.columns:
+        return today_notes.to_dict("records")
+
+    note_ids = today_notes["id"].astype(str)
+    my_checked = set(
+        logs.loc[
+            (logs["username"].astype(str) == str(username)) &
+            (logs["note_id"].astype(str).isin(note_ids)),
+            "note_id"
+        ].astype(str).tolist()
+    )
+
+    unconfirmed = today_notes[~today_notes["id"].astype(str).isin(my_checked)]
+    return unconfirmed.to_dict("records")
 
 def get_new_comments_count(username: str) -> int:
     res_posts = DataManager.load("posts")
@@ -615,14 +659,17 @@ def search_content(query: str) -> Dict[str, List[dict]]:
 def show_network_status():
     pending_saves = st.session_state.get("pending_saves", [])
     if pending_saves:
-        st.markdown(f'<div class="network-status network-error">📡 저장 대기: {len(pending_saves)}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="network-status network-error">📡 저장 대기: {len(pending_saves)}</div>',
+            unsafe_allow_html=True,
+        )
 
 def show_pending_saves_retry():
     pending = st.session_state.get("pending_saves", [])
     if pending:
         with st.expander(f"📡 저장 실패 항목 ({len(pending)}건)", expanded=True):
             for item in pending:
-                ts = item['timestamp'][5:16]
+                ts = item["timestamp"][5:16]
                 st.write(f"- {item['operation']} ({ts})")
             st.markdown('<div class="retry-btn">', unsafe_allow_html=True)
             if st.button("🔄 재시도", key="retry_pending"):
@@ -634,7 +681,7 @@ def show_pending_saves_retry():
                         st.error(f"❌ {fail}건 실패")
                     time.sleep(1)
                     st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
 @st.dialog("🚨 중요 알림")
 def show_notification_popup(tasks: List[dict], inform_notes: List[dict]):
@@ -643,27 +690,29 @@ def show_notification_popup(tasks: List[dict], inform_notes: List[dict]):
         if urgent:
             st.error(f"🚨 **긴급 필독 ({len(urgent)}건)**")
             for note in urgent:
-                st.markdown(f"**📌 {note['content'][:50]}...**")
+                st.markdown(f"**📌 {str(note.get('content',''))[:50]}...**")
     if tasks:
         st.info(f"🔄 **오늘의 반복 업무 ({len(tasks)}건)**")
         for t in tasks:
-            st.write(f"• {t['task_name']}")
+            st.write(f"• {t.get('task_name','')}")
     if st.button("확인", use_container_width=True):
         st.rerun()
 
 def show_dashboard():
-    username_name = st.session_state['name']
+    username = st.session_state["name"]
+
     pending_tasks = get_pending_tasks_list()
-    unconfirmed_informs = get_unconfirmed_inform_list(username_name)
-    new_comments = get_new_comments_count(username_name)
-    mentions = get_mentions_for_user(username_name)
+    unconfirmed_informs = get_unconfirmed_inform_list(username)
+    new_comments = get_new_comments_count(username)
+    mentions = get_mentions_for_user(username)
 
     st.subheader("📊 오늘의 현황")
 
     urgent_cnt = len([i for i in unconfirmed_informs if i.get("priority") == "긴급"])
     inform_color = "summary-alert" if urgent_cnt > 0 else ""
 
-    st.markdown(f"""
+    st.markdown(
+        f"""
         <div class="summary-container">
             <div class="summary-card">
                 <div class="summary-title">📢 미확인 인폼</div>
@@ -678,7 +727,9 @@ def show_dashboard():
                 <div class="summary-value">{new_comments + len(mentions)}</div>
             </div>
         </div>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
     c1, c2, c3 = st.columns(3)
     if c1.button("📢 인폼 확인", use_container_width=True):
@@ -720,13 +771,13 @@ def show_search():
         with st.spinner("검색 중..."):
             res = search_content(query)
         st.write(f"결과: {len(res['inform']) + len(res['posts'])}건")
-        if res['inform']:
+        if res["inform"]:
             with st.expander(f"인폼 ({len(res['inform'])})"):
-                for i in res['inform']:
+                for i in res["inform"]:
                     st.write(f"[{i.get('target_date','')}] {i.get('content','')}")
-        if res['posts']:
+        if res["posts"]:
             with st.expander(f"게시글 ({len(res['posts'])})"):
-                for p in res['posts']:
+                for p in res["posts"]:
                     st.write(f"[{p.get('board_type','')}] {p.get('title','')} - {p.get('author','')}")
 
 # ============================================================
@@ -736,10 +787,6 @@ def sessions_available() -> bool:
     return DataManager._sheet_exists("sessions")
 
 def create_session_token(username: str, days_valid: int = 30) -> Optional[str]:
-    """
-    sessions 시트가 있으면 토큰 생성/저장 후 토큰 반환.
-    없으면 None 반환(기존 해시쿠키 fallback)
-    """
     if not sessions_available():
         return None
     token = str(uuid.uuid4())
@@ -751,22 +798,17 @@ def create_session_token(username: str, days_valid: int = 30) -> Optional[str]:
         "created_at": created,
         "expires_at": expires,
         "revoked": "False",
-        "row_uuid": str(uuid.uuid4())
+        "row_uuid": str(uuid.uuid4()),
     }
-    # id_column None: sessions는 token이 PK처럼 동작
     DataManager.append_row("sessions", row, None, "세션생성")
     return token
 
 def revoke_session_token(token: str):
     if not token or not sessions_available():
         return
-    # token 기준 revoked 처리(삭제보다 안전)
     DataManager.update_row("sessions", "token", token, {"revoked": "True"}, "세션폐기")
 
 def validate_session_token(token: str) -> Optional[str]:
-    """
-    토큰이 유효하면 username 반환, 아니면 None
-    """
     if not token or not sessions_available():
         return None
     df = DataManager.load("sessions", force_refresh=True).data
@@ -796,16 +838,20 @@ def login_page():
     st.markdown("<br>", unsafe_allow_html=True)
     processed_logo = get_processed_logo("logo.png", icon_size=(80, 80))
     if processed_logo:
-        st.markdown(f"""
+        st.markdown(
+            f"""
             <div class="logo-title-container">
                 <img src="data:image/png;base64,{image_to_base64(processed_logo)}" style="max-height: 80px;">
                 <h1>업무수첩</h1>
             </div>
-        """, unsafe_allow_html=True)
+            """,
+            unsafe_allow_html=True,
+        )
     else:
         st.title("업무수첩")
 
     tab1, tab2 = st.tabs(["로그인", "회원가입"])
+
     with tab1:
         with st.form("login"):
             uid = st.text_input("아이디")
@@ -822,26 +868,26 @@ def login_page():
 
                     if not u.empty:
                         if check_approved(u.iloc[0].get("approved", "False")):
-                            st.session_state.update({
-                                "logged_in": True,
-                                "username": uid,                      # [추가]
-                                "name": u.iloc[0]["name"],
-                                "role": u.iloc[0]["role"],
-                                "department": u.iloc[0].get("department", "전체"),
-                                "show_popup_on_login": True
-                            })
+                            st.session_state.update(
+                                {
+                                    "logged_in": True,
+                                    "username": uid,
+                                    "name": u.iloc[0]["name"],
+                                    "role": u.iloc[0]["role"],
+                                    "department": u.iloc[0].get("department", "전체"),
+                                    "show_popup_on_login": True,
+                                    "boot_home_loaded": False,  # 로그인 시 첫 홈 최적화를 위해 초기화
+                                }
+                            )
 
-                            # ====== [5번] 자동로그인 토큰화 ======
                             if auto and cookies:
-                                # 1) sessions 시트가 있으면 토큰 방식
                                 token = create_session_token(uid)
                                 if token:
                                     safe_set_cookie("auto_login", "true")
                                     safe_set_cookie("session_token", token)
-                                    # 기존 쿠키는 남겨두되 사용 우선순위는 token
-                                    safe_set_cookie("uid", uid)
+                                    safe_set_cookie("uid", uid)  # 보조
                                 else:
-                                    # 2) fallback: 기존 방식(해시)
+                                    # fallback(기존 방식 유지)
                                     safe_set_cookie("auto_login", "true")
                                     safe_set_cookie("uid", uid)
                                     safe_set_cookie("upw", hpw)
@@ -876,7 +922,7 @@ def login_page():
                                 "name": nname,
                                 "role": "Staff",
                                 "approved": "False",
-                                "department": ndept
+                                "department": ndept,
                             }
                             DataManager.append_row("users", new_row, None, "가입신청")
                             st.success("신청 완료! 승인을 기다려주세요.")
@@ -896,29 +942,36 @@ def page_inform():
             st.session_state["inform_date"] -= timedelta(days=1)
             st.rerun()
     with c2:
-        st.session_state["inform_date"] = st.date_input("날짜", value=st.session_state["inform_date"], label_visibility="collapsed")
+        st.session_state["inform_date"] = st.date_input(
+            "날짜", value=st.session_state["inform_date"], label_visibility="collapsed"
+        )
     with c3:
         if st.button("▶", use_container_width=True):
             st.session_state["inform_date"] += timedelta(days=1)
             st.rerun()
 
     sel_date = st.session_state["inform_date"].strftime("%Y-%m-%d")
-    name = st.session_state['name']
+    name = st.session_state["name"]
 
-    if st.session_state['role'] in ["Master", "Manager"]:
+    if st.session_state["role"] in ["Master", "Manager"]:
         with st.expander("📝 작성"):
             with st.form("new_inf"):
                 td = st.date_input("날짜", value=st.session_state["inform_date"])
                 pr = st.radio("중요도", ["일반", "긴급"], horizontal=True)
                 ct = st.text_area("내용")
                 if st.form_submit_button("등록", use_container_width=True):
-                    DataManager.append_row("inform_notes", {
-                        "target_date": td.strftime("%Y-%m-%d"),
-                        "content": ct,
-                        "author": name,
-                        "priority": pr,
-                        "created_at": get_now().strftime("%Y-%m-%d %H:%M")
-                    }, "id", "인폼")
+                    DataManager.append_row(
+                        "inform_notes",
+                        {
+                            "target_date": td.strftime("%Y-%m-%d"),
+                            "content": ct,
+                            "author": name,
+                            "priority": pr,
+                            "created_at": get_now().strftime("%Y-%m-%d %H:%M"),
+                        },
+                        "id",
+                        "인폼",
+                    )
                     st.rerun()
 
     res_n = DataManager.load("inform_notes")
@@ -928,25 +981,29 @@ def page_inform():
         if "target_date" not in notes.columns:
             st.info("인폼 컬럼(target_date) 없음")
             return
-        daily = notes[notes["target_date"] == sel_date]
+
+        daily = notes[notes["target_date"].astype(str) == sel_date]
         if daily.empty:
             st.info("인폼 없음")
         else:
-            daily = sorted(daily.to_dict('records'), key=lambda x: 0 if x.get('priority') == '긴급' else 1)
+            daily = sorted(daily.to_dict("records"), key=lambda x: 0 if x.get("priority") == "긴급" else 1)
             logs = res_l.data if res_l.success else pd.DataFrame()
 
             for n in daily:
-                nid = str(n.get('id', ''))
-                urgent = n.get('priority') == '긴급'
+                nid = str(n.get("id", ""))
+                urgent = n.get("priority") == "긴급"
                 cls = "inform-item inform-urgent" if urgent else "inform-item"
                 badge = "🚨 긴급" if urgent else ""
 
-                st.markdown(f"""
+                st.markdown(
+                    f"""
                     <div class="{cls}">
                         <div style="font-weight:bold; margin-bottom:5px;">{n.get("author","")} <span style="color:red">{badge}</span></div>
                         <div style="white-space:pre-wrap;">{highlight_mentions(n.get("content",""))}</div>
                     </div>
-                """, unsafe_allow_html=True)
+                    """,
+                    unsafe_allow_html=True,
+                )
 
                 conf = []
                 if not logs.empty and "note_id" in logs.columns and "username" in logs.columns:
@@ -956,11 +1013,16 @@ def page_inform():
                 with c_btn:
                     if name not in conf:
                         if st.button("확인함 ✅", key=f"ok_{nid}"):
-                            DataManager.append_row("inform_logs", {
-                                "note_id": nid,
-                                "username": name,
-                                "confirmed_at": get_now().strftime("%m-%d %H:%M")
-                            }, None, "확인")
+                            DataManager.append_row(
+                                "inform_logs",
+                                {
+                                    "note_id": nid,
+                                    "username": name,
+                                    "confirmed_at": get_now().strftime("%m-%d %H:%M"),
+                                },
+                                None,
+                                "확인",
+                            )
                             st.rerun()
                     else:
                         st.success("확인됨")
@@ -970,7 +1032,7 @@ def page_inform():
 
 def page_routine():
     st.subheader("🔄 업무 체크")
-    name = st.session_state['name']
+    name = st.session_state["name"]
     t1, t2 = st.tabs(["📋 오늘 업무", "📊 기록/관리"])
 
     with t1:
@@ -983,18 +1045,23 @@ def page_routine():
                 with st.form(f"do_{t.get('id','')}"):
                     mm = st.text_input("메모", placeholder="특이사항")
                     if st.form_submit_button("완료 ✅", use_container_width=True):
-                        DataManager.append_row("routine_log", {
-                            "task_id": t.get('id',''),
-                            "done_date": get_today_str(),
-                            "worker": name,
-                            "memo": mm,
-                            "created_at": get_now().strftime("%H:%M")
-                        }, None, "완료")
+                        DataManager.append_row(
+                            "routine_log",
+                            {
+                                "task_id": t.get("id", ""),
+                                "done_date": get_today_str(),
+                                "worker": name,
+                                "memo": mm,
+                                "created_at": get_now().strftime("%H:%M"),
+                            },
+                            None,
+                            "완료",
+                        )
                         st.rerun()
                 st.divider()
 
     with t2:
-        if st.session_state['role'] in ["Master", "Manager"]:
+        if st.session_state["role"] in ["Master", "Manager"]:
             with st.expander("➕ 새 업무 추가"):
                 with st.form("nr"):
                     tn = st.text_input("업무명")
@@ -1002,13 +1069,18 @@ def page_routine():
                     cy = st.selectbox("주기", ["매일", "매주", "매월"])
                     if st.form_submit_button("추가"):
                         new_id = int(time.time())
-                        DataManager.append_row("routine_def", {
-                            "id": new_id,
-                            "task_name": tn,
-                            "start_date": sd.strftime("%Y-%m-%d"),
-                            "cycle_type": cy,
-                            "interval_val": 1
-                        }, "id", "추가")
+                        DataManager.append_row(
+                            "routine_def",
+                            {
+                                "id": new_id,
+                                "task_name": tn,
+                                "start_date": sd.strftime("%Y-%m-%d"),
+                                "cycle_type": cy,
+                                "interval_val": 1,
+                            },
+                            "id",
+                            "추가",
+                        )
                         st.rerun()
 
         res_def = DataManager.load("routine_def")
@@ -1021,13 +1093,13 @@ def page_routine():
                     if "cycle_type" not in df.columns:
                         st.info("routine_def 컬럼(cycle_type) 없음")
                         continue
-                    sub = df[df['cycle_type'] == cy]
+                    sub = df[df["cycle_type"] == cy]
                     for _, r in sub.iterrows():
                         col_txt, col_btn = st.columns([3, 1])
                         col_txt.write(f"**{r.get('task_name','')}** ({r.get('start_date','')}~)")
-                        if st.session_state['role'] in ["Master", "Manager"]:
+                        if st.session_state["role"] in ["Master", "Manager"]:
                             if col_btn.button("삭제", key=f"del_{r.get('id','')}_{cy}"):
-                                DataManager.delete_row("routine_def", "id", r.get('id',''), "삭제")
+                                DataManager.delete_row("routine_def", "id", r.get("id", ""), "삭제")
                                 st.rerun()
 
         st.divider()
@@ -1035,36 +1107,35 @@ def page_routine():
         logs = DataManager.load("routine_log").data
         defs = DataManager.load("routine_def").data
         if not logs.empty and not defs.empty and "task_id" in logs.columns and "id" in defs.columns:
-            logs['task_id'] = logs['task_id'].astype(str)
-            defs['id'] = defs['id'].astype(str)
-            m = pd.merge(logs, defs, left_on='task_id', right_on='id', how='left')
-            show_cols = [c for c in ['done_date', 'task_name', 'worker', 'memo'] if c in m.columns]
+            logs["task_id"] = logs["task_id"].astype(str)
+            defs["id"] = defs["id"].astype(str)
+            m = pd.merge(logs, defs, left_on="task_id", right_on="id", how="left")
+            show_cols = [c for c in ["done_date", "task_name", "worker", "memo"] if c in m.columns]
             if show_cols:
                 st.dataframe(
-                    m[show_cols].sort_values('done_date', ascending=False).head(50),
-                    hide_index=True, use_container_width=True
+                    m[show_cols].sort_values("done_date", ascending=False).head(50),
+                    hide_index=True,
+                    use_container_width=True,
                 )
 
-# ============================
-# [2번, 4번 핵심 적용] Board 최적화 + 상태/담당자/마감
-# ============================
+# ---------------------------
+# 게시판: 댓글 로딩 최적화 + 상태/담당자/마감
+# ---------------------------
 def page_board(bn, icon):
     st.subheader(f"{icon} {bn}")
-    name = st.session_state['name']
+    name = st.session_state["name"]
 
-    # 글쓰기: 기존 유지 + [추가] 상태/담당자/마감(옵션)
-    if st.session_state['role'] in ["Master", "Manager"] or bn == "건의사항":
+    if st.session_state["role"] in ["Master", "Manager"] or bn == "건의사항":
         with st.expander("글쓰기"):
             with st.form(f"w_{bn}"):
                 tt = st.text_input("제목")
                 ct = st.text_area("내용")
 
-                # [4번] 관리자/매니저는 상태/담당자/마감 설정 가능
                 status = "접수"
                 assignee = ""
                 due_date = ""
-                if st.session_state['role'] in ["Master", "Manager"]:
-                    cA, cB, cC = st.columns([1,1,1])
+                if st.session_state["role"] in ["Master", "Manager"]:
+                    cA, cB, cC = st.columns([1, 1, 1])
                     with cA:
                         status = st.selectbox("상태", POST_STATUS, index=0)
                     with cB:
@@ -1074,21 +1145,24 @@ def page_board(bn, icon):
                         due_date = d.strftime("%Y-%m-%d") if d else ""
 
                 if st.form_submit_button("등록", use_container_width=True):
-                    DataManager.append_row("posts", {
-                        "board_type": bn,
-                        "title": tt,
-                        "content": ct,
-                        "author": name,
-                        "date": get_now().strftime("%Y-%m-%d"),
-                        # [4번] 신규 컬럼 (없어도 저장 시 시트에 생기거나, 기존 시트 구조에 따라 문자열로 들어감)
-                        "status": status,
-                        "assignee": assignee,
-                        "due_date": due_date,
-                        "updated_at": now_str("%Y-%m-%d %H:%M"),
-                    }, "id", "글쓰기")
+                    DataManager.append_row(
+                        "posts",
+                        {
+                            "board_type": bn,
+                            "title": tt,
+                            "content": ct,
+                            "author": name,
+                            "date": get_now().strftime("%Y-%m-%d"),
+                            "status": status,
+                            "assignee": assignee,
+                            "due_date": due_date,
+                            "updated_at": now_str("%Y-%m-%d %H:%M"),
+                        },
+                        "id",
+                        "글쓰기",
+                    )
                     st.rerun()
 
-    # [2번] posts/comments는 여기서 딱 1번만 로드
     posts_df = DataManager.load("posts").data
     comments_df = DataManager.load("comments").data
 
@@ -1096,18 +1170,16 @@ def page_board(bn, icon):
         st.info("게시글이 없습니다.")
         return
 
-    # [4번] 누락 컬럼 기본값 채우기 (기존 데이터 깨짐 방지)
     for col, default in [("status", "접수"), ("assignee", ""), ("due_date", ""), ("updated_at", "")]:
         if col not in posts_df.columns:
             posts_df[col] = default
 
-    # 댓글도 기본 컬럼 방어
     if not comments_df.empty:
         for col, default in [("post_id", ""), ("author", ""), ("content", ""), ("date", "")]:
             if col not in comments_df.columns:
                 comments_df[col] = default
 
-    # [2번] 댓글을 post_id 기준으로 미리 그룹핑 (반복 로드/필터 비용 제거)
+    # 댓글 groupby로 미리 맵 구성 (속도 핵심)
     comments_map: Dict[str, pd.DataFrame] = {}
     if not comments_df.empty:
         comments_df["post_id"] = comments_df["post_id"].astype(str)
@@ -1118,9 +1190,8 @@ def page_board(bn, icon):
     if "id" in mp.columns:
         mp = mp.sort_values("id", ascending=False)
 
-    # [4번] 상태 필터(기존 UX는 유지하면서 옵션만 추가)
     with st.expander("필터", expanded=False):
-        c1, c2 = st.columns([1,1])
+        c1, c2 = st.columns([1, 1])
         with c1:
             sel_status = st.multiselect("상태", POST_STATUS, default=POST_STATUS)
         with c2:
@@ -1132,10 +1203,10 @@ def page_board(bn, icon):
         mp = mp[mp["author"] == name]
 
     for _, r in mp.iterrows():
-        pid = str(r.get("id",""))
-        st_badge = badge_for_status(str(r.get("status","접수")))
-        ass = str(r.get("assignee","")).strip()
-        due = str(r.get("due_date","")).strip()
+        pid = str(r.get("id", ""))
+        st_badge = badge_for_status(str(r.get("status", "접수")))
+        ass = str(r.get("assignee", "")).strip()
+        due = str(r.get("due_date", "")).strip()
         meta = []
         if ass:
             meta.append(f"담당: {ass}")
@@ -1146,23 +1217,24 @@ def page_board(bn, icon):
         exp_title = f"{r.get('title','')} ({r.get('author','')})"
         with st.expander(exp_title):
             st.markdown(f"{st_badge} <b>{r.get('title','')}</b>{meta_txt}", unsafe_allow_html=True)
-            st.write(r.get('content',''))
+            st.write(r.get("content", ""))
 
-            # [4번] 관리자/매니저: 상태/담당자/마감 수정(기존 삭제 기능 유지)
-            if st.session_state['role'] in ["Master", "Manager"]:
+            # 관리자/매니저: 상태/담당자/마감 수정
+            if st.session_state["role"] in ["Master", "Manager"]:
                 with st.expander("상태/담당자/마감 수정", expanded=False):
                     with st.form(f"edit_post_{pid}"):
-                        cA, cB, cC = st.columns([1,1,1])
+                        cA, cB, cC = st.columns([1, 1, 1])
                         with cA:
-                            new_status = st.selectbox("상태", POST_STATUS, index=POST_STATUS.index(str(r.get("status","접수"))) if str(r.get("status","접수")) in POST_STATUS else 0)
+                            cur_status = str(r.get("status", "접수"))
+                            idx = POST_STATUS.index(cur_status) if cur_status in POST_STATUS else 0
+                            new_status = st.selectbox("상태", POST_STATUS, index=idx)
                         with cB:
-                            new_assignee = st.text_input("담당자(이름)", value=str(r.get("assignee","")))
+                            new_assignee = st.text_input("담당자(이름)", value=str(r.get("assignee", "")))
                         with cC:
-                            # 날짜 문자열 -> date로 변환 시도
                             cur_due = None
                             try:
-                                if str(r.get("due_date","")).strip():
-                                    cur_due = datetime.strptime(str(r.get("due_date","")).strip(), "%Y-%m-%d").date()
+                                if str(r.get("due_date", "")).strip():
+                                    cur_due = datetime.strptime(str(r.get("due_date", "")).strip(), "%Y-%m-%d").date()
                             except:
                                 cur_due = None
                             d = st.date_input("마감", value=cur_due)
@@ -1171,41 +1243,45 @@ def page_board(bn, icon):
                             DataManager.update_row(
                                 "posts",
                                 "id",
-                                r.get("id",""),
-                                {"status": new_status, "assignee": new_assignee, "due_date": new_due, "updated_at": now_str("%Y-%m-%d %H:%M")},
-                                "게시글 상태 수정"
+                                r.get("id", ""),
+                                {
+                                    "status": new_status,
+                                    "assignee": new_assignee,
+                                    "due_date": new_due,
+                                    "updated_at": now_str("%Y-%m-%d %H:%M"),
+                                },
+                                "게시글 상태 수정",
                             )
                             st.rerun()
 
-            # 기존: 작성자/마스터 삭제 유지
-            if st.session_state['role'] == "Master" or r.get('author','') == name:
+            # 기존 삭제 권한 유지
+            if st.session_state["role"] == "Master" or r.get("author", "") == name:
                 if st.button("삭제", key=f"del_{pid}"):
-                    DataManager.delete_row("posts", "id", r.get('id',''), "삭제")
+                    DataManager.delete_row("posts", "id", r.get("id", ""), "삭제")
                     st.rerun()
 
-            # [2번] 댓글 표시: comments_map에서 즉시 가져오기
+            # 댓글 표시 (map에서 즉시)
             grp = comments_map.get(pid)
             if grp is not None and not grp.empty:
-                # 최신순 정렬(가능하면)
-                try:
-                    grp2 = grp.copy()
-                    # date가 mm-dd HH:MM 형태라 정렬이 완벽하진 않지만 표시용
-                    st.caption("댓글")
-                    for _, c in grp2.iterrows():
-                        st.caption(f"{c.get('author','')}: {c.get('content','')}")
-                except:
-                    pass
+                st.caption("댓글")
+                for _, c in grp.iterrows():
+                    st.caption(f"{c.get('author','')}: {c.get('content','')}")
 
-            # 댓글 작성: 기존 유지 + append성 row_uuid 부여는 DataManager에서 처리
+            # 댓글 작성 (기존 유지)
             with st.form(f"c_{pid}"):
                 ctxt = st.text_input("댓글", label_visibility="collapsed")
                 if st.form_submit_button("등록"):
-                    DataManager.append_row("comments", {
-                        "post_id": r.get('id',''),
-                        "author": name,
-                        "content": ctxt,
-                        "date": get_now().strftime("%m-%d %H:%M")
-                    }, None, "댓글")
+                    DataManager.append_row(
+                        "comments",
+                        {
+                            "post_id": r.get("id", ""),
+                            "author": name,
+                            "content": ctxt,
+                            "date": get_now().strftime("%m-%d %H:%M"),
+                        },
+                        None,
+                        "댓글",
+                    )
                     st.rerun()
 
 def page_staff_mgmt():
@@ -1221,26 +1297,26 @@ def page_staff_mgmt():
             c1, c2, c3 = st.columns([2, 1, 1])
             c1.write(f"{u.get('name','')} ({u.get('username','')})")
             if c2.button("승인", key=f"ap_{u.get('username','')}"):
-                DataManager.update_row("users", "username", u.get('username',''), {"approved": "True"}, "승인")
+                DataManager.update_row("users", "username", u.get("username", ""), {"approved": "True"}, "승인")
                 st.rerun()
             if c3.button("거절", key=f"rj_{u.get('username','')}"):
-                DataManager.delete_row("users", "username", u.get('username',''), "거절")
+                DataManager.delete_row("users", "username", u.get("username", ""), "거절")
                 st.rerun()
     st.divider()
 
     active = users[users["approved"].apply(check_approved)] if "approved" in users.columns else users
     for _, u in active.iterrows():
-        # [버그 수정 + 기존 기능 유지] 자기 자신 숨기기: username vs name 비교 오류 수정
-        if str(u.get('username','')) == str(st.session_state.get('username','')):
+        # (버그 수정) username vs name 비교 오류 수정: 자기 자신 숨기기
+        if str(u.get("username", "")) == str(st.session_state.get("username", "")):
             continue
         with st.expander(f"{u.get('name','')} ({u.get('role','')})"):
             with st.form(f"ed_{u.get('username','')}"):
                 roles = ["Master", "Manager", "Staff"]
-                cur_role = str(u.get('role','Staff'))
+                cur_role = str(u.get("role", "Staff"))
                 idx = roles.index(cur_role) if cur_role in roles else 2
                 nr = st.selectbox("직급", roles, index=idx)
                 if st.form_submit_button("수정"):
-                    DataManager.update_row("users", "username", u.get('username',''), {"role": nr}, "수정")
+                    DataManager.update_row("users", "username", u.get("username", ""), {"role": nr}, "수정")
                     st.rerun()
 
 # ============================================================
@@ -1253,7 +1329,7 @@ def main():
     if not st.session_state.get("logged_in"):
         try:
             if safe_get_cookie("auto_login") == "true":
-                # [5번] 1순위: 세션 토큰 자동로그인
+                # 1순위: 세션 토큰 자동로그인
                 token = safe_get_cookie("session_token")
                 if token:
                     uid = validate_session_token(token)
@@ -1264,36 +1340,39 @@ def main():
                             users["username"] = users["username"].astype(str)
                             u = users[users["username"] == uid]
                             if not u.empty and check_approved(u.iloc[0].get("approved", "False")):
-                                st.session_state.update({
-                                    "logged_in": True,
-                                    "username": uid,
-                                    "name": u.iloc[0]["name"],
-                                    "role": u.iloc[0]["role"],
-                                    "department": u.iloc[0].get("department", "전체")
-                                })
-                # 2순위: 기존 방식(해시 쿠키) fallback
+                                st.session_state.update(
+                                    {
+                                        "logged_in": True,
+                                        "username": uid,
+                                        "name": u.iloc[0]["name"],
+                                        "role": u.iloc[0]["role"],
+                                        "department": u.iloc[0].get("department", "전체"),
+                                    }
+                                )
+
+                # 2순위: 기존 해시 쿠키 fallback
                 if not st.session_state.get("logged_in"):
                     uid = safe_get_cookie("uid")
-                    upw = safe_get_cookie("upw")  # 해시값
+                    upw = safe_get_cookie("upw")
                     if uid:
                         res = DataManager.load("users", force_refresh=True)
                         if res.success and not res.data.empty:
                             users = res.data
                             users["username"] = users["username"].astype(str)
                             u = users[users["username"] == uid]
-                            # upw 비교는 기존 로직 유지(있을 때만)
                             if not u.empty and check_approved(u.iloc[0].get("approved", "False")):
                                 if upw:
-                                    if str(u.iloc[0].get("password","")) != str(upw):
-                                        # 비번이 바뀐 경우 자동로그인 방지
+                                    if str(u.iloc[0].get("password", "")) != str(upw):
                                         raise Exception("saved hash mismatch")
-                                st.session_state.update({
-                                    "logged_in": True,
-                                    "username": uid,
-                                    "name": u.iloc[0]["name"],
-                                    "role": u.iloc[0]["role"],
-                                    "department": u.iloc[0].get("department", "전체")
-                                })
+                                st.session_state.update(
+                                    {
+                                        "logged_in": True,
+                                        "username": uid,
+                                        "name": u.iloc[0]["name"],
+                                        "role": u.iloc[0]["role"],
+                                        "department": u.iloc[0].get("department", "전체"),
+                                    }
+                                )
         except:
             pass
 
@@ -1301,12 +1380,24 @@ def main():
         login_page()
         return
 
-    # 데이터 프리패치
-    with st.spinner("데이터 동기화 중..."):
-        DataManager.prefetch_all_data()
+    # ✅ [속도 개선 핵심] 로그인 직후에는 홈/팝업 최소 데이터만 먼저 로드
+    if not st.session_state.get("boot_home_loaded"):
+        with st.spinner("동기화 중..."):
+            DataManager.prefetch_home_popup()
+        st.session_state["boot_home_loaded"] = True
 
     show_network_status()
 
+    # ✅ [속도 개선] 팝업은 메뉴/페이지 렌더 전에 먼저 판단(홈 첫 진입 체감 개선)
+    if st.session_state.get("show_popup_on_login"):
+        pt = get_pending_tasks_list()
+        uc = get_unconfirmed_inform_list(st.session_state["name"])
+        if pt or uc:
+            show_notification_popup(pt, uc)
+        st.session_state["show_popup_on_login"] = False
+        # 팝업 확인 버튼 -> rerun 발생. 아래 UI는 다음 렌더에서 그려짐.
+
+    # 상단바
     c1, c2, c3 = st.columns([1, 4, 1])
     with c1:
         if processed_icon:
@@ -1316,25 +1407,45 @@ def main():
     with c3:
         if st.button("🔄", key="refresh"):
             DataManager.clear_cache()
+            # 리프레시하면 다음 렌더에 최소 프리패치 다시
+            st.session_state["boot_home_loaded"] = False
             st.rerun()
 
     show_pending_saves_retry()
 
-    menu = ["홈", "인폼", "본점", "작업장", "건의", "체크", "로그아웃"]
+    menu = ["홈", "인폼", "본점", "작업", "건의", "체크", "로그아웃"]
     icons = ["house-fill", "megaphone-fill", "shop", "tools", "chat-dots", "check2-square", "box-arrow-right"]
-    if st.session_state['role'] == "Master":
+    if st.session_state["role"] == "Master":
         menu.insert(-1, "관리")
         icons.insert(-1, "people-fill")
 
     m = option_menu(
-        None, menu, icons=icons, menu_icon="cast", default_index=0, orientation="horizontal",
-        styles={"container": {"padding": "0!important", "background-color": "#FFF3E0"}, "nav-link": {"font-size": "10px", "padding": "8px 5px"}}
+        None,
+        menu,
+        icons=icons,
+        menu_icon="cast",
+        default_index=0,
+        orientation="horizontal",
+        styles={"container": {"padding": "0!important", "background-color": "#FFF3E0"},
+                "nav-link": {"font-size": "10px", "padding": "8px 5px"}},
     )
+
+    # (선택) 메뉴에 따라 필요한 시트만 그때 추가 프리패치 (첫 홈 속도 유지)
+    # - 홈은 이미 최소 프리패치 완료
+    # - 게시판/알림 체감 올리고 싶으면 아래처럼 켜세요.
+    if m in ["본점", "작업", "건의"]:
+        DataManager.prefetch(["posts", "comments"])
+    elif m == "관리":
+        DataManager.prefetch(["users"])
+    elif m == "체크":
+        DataManager.prefetch(["routine_def", "routine_log"])
+    elif m == "인폼":
+        DataManager.prefetch(["inform_notes", "inform_logs"])
 
     if m == "로그아웃":
         st.session_state["logged_in"] = False
 
-        # [5번] 토큰 세션이 있으면 revoke
+        # 토큰 세션 revoke
         try:
             token = safe_get_cookie("session_token")
             if token:
@@ -1342,13 +1453,16 @@ def main():
         except:
             pass
 
-        # 쿠키 정리(기존 유지 + 토큰 추가)
+        # 쿠키 정리
         try:
             if cookies:
                 safe_set_cookie("auto_login", "false")
                 safe_set_cookie("session_token", "")
         except:
             pass
+
+        # 로그인 재진입 시 홈 최적화 재적용
+        st.session_state["boot_home_loaded"] = False
         st.rerun()
 
     elif m == "홈":
@@ -1366,13 +1480,5 @@ def main():
     elif m == "관리":
         page_staff_mgmt()
 
-    if st.session_state.get("show_popup_on_login"):
-        pt = get_pending_tasks_list()
-        uc = get_unconfirmed_inform_list(st.session_state['name'])
-        if pt or uc:
-            show_notification_popup(pt, uc)
-        st.session_state["show_popup_on_login"] = False
-
 if __name__ == "__main__":
     main()
-
