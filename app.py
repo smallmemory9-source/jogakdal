@@ -266,6 +266,35 @@ header { background-color: transparent !important; }
     gap: 10px;
     margin-bottom: 15px;
 }
+
+/* 모바일 메뉴 최적화 */
+@media (max-width: 768px) {
+    .stHorizontalBlock {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+    }
+    
+    /* 옵션 메뉴 컨테이너 */
+    [data-testid="stHorizontalBlock"] > div {
+        min-width: fit-content !important;
+    }
+}
+
+/* 메뉴 아이콘 정렬 */
+.nav-link {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* 헤더 간소화 */
+.header-container {
+    display: flex;
+    align-items: center;
+    padding: 5px 0;
+    gap: 8px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1576,28 +1605,25 @@ def main():
         login_page()
         return
     
-    # 로그인 상태 - 헤더
+    # 로그인 상태 - 헤더 (간소화)
     show_network_status()
     
-    processed_logo_header = get_processed_logo("logo.png", icon_size=(50, 50))
-    c1, c2, c3, c4 = st.columns([0.5, 3, 0.5, 0.5])
+    processed_logo_header = get_processed_logo("logo.png", icon_size=(35, 35))
     
-    with c1:
+    # 헤더를 한 줄로 간소화
+    header_cols = st.columns([0.8, 4, 1, 1])
+    
+    with header_cols[0]:
         if processed_logo_header:
-            st.image(processed_logo_header, width=40)
-    with c2:
-        st.markdown(f"""
-            <div style='padding-top:8px;'>
-                <b>{st.session_state['name']}</b>
-                <small style='color:#888;'>({st.session_state.get('department','전체')})</small>
-            </div>
-        """, unsafe_allow_html=True)
-    with c3:
-        if st.button("🔍", help="검색"):
+            st.image(processed_logo_header, width=35)
+    with header_cols[1]:
+        st.markdown(f"<div style='padding-top:5px;font-size:0.9em;'><b>{st.session_state['name']}</b> <small>({st.session_state.get('department','전체')})</small></div>", unsafe_allow_html=True)
+    with header_cols[2]:
+        if st.button("🔍", help="검색", key="search_btn"):
             st.session_state["show_search"] = not st.session_state.get("show_search", False)
             st.rerun()
-    with c4:
-        if st.button("🔄", help="새로고침"):
+    with header_cols[3]:
+        if st.button("🔄", help="새로고침", key="refresh_btn"):
             DataManager.clear_cache()
             st.session_state["last_error"] = None
             st.rerun()
@@ -1610,29 +1636,29 @@ def main():
     # 실패한 저장 재시도 UI
     show_pending_saves_retry()
     
-    # 메뉴 구성
+    # 메뉴 구성 - 모바일 최적화 (짧은 이름)
     menu_opts = ["홈"]
-    menu_icons = ["house"]
+    menu_icons = ["house-fill"]
     dept = st.session_state.get('department', '전체')
     
     menu_opts.append("인폼")
-    menu_icons.append("bell")
+    menu_icons.append("megaphone-fill")
     
     if dept in ['전체', '본점']:
         menu_opts.append("본점")
         menu_icons.append("shop")
     if dept in ['전체', '작업장']:
-        menu_opts.append("작업장")
+        menu_opts.append("작업")
         menu_icons.append("tools")
     
-    menu_opts.extend(["건의", "업무"])
-    menu_icons.extend(["lightbulb", "check-square"])
+    menu_opts.extend(["건의", "체크"])
+    menu_icons.extend(["chat-dots", "check2-square"])
     
     if st.session_state['role'] == "Master":
         menu_opts.append("관리")
-        menu_icons.append("people")
+        menu_icons.append("people-fill")
     
-    menu_opts.append("나가기")
+    menu_opts.append("로그아웃")
     menu_icons.append("box-arrow-right")
     
     m = option_menu(
@@ -1642,21 +1668,30 @@ def main():
         default_index=0,
         orientation="horizontal",
         styles={
-            "container": {"padding": "0!important", "background-color": "#FFF3E0", "margin": "0"},
-            "icon": {"color": "#4E342E", "font-size": "14px"},
+            "container": {
+                "padding": "0!important", 
+                "background-color": "#FFF3E0", 
+                "margin": "0",
+                "display": "flex",
+                "flex-wrap": "nowrap",
+                "overflow-x": "auto"
+            },
+            "icon": {"color": "#4E342E", "font-size": "16px", "margin-bottom": "2px"},
             "nav-link": {
-                "font-size": "12px",
+                "font-size": "10px",
                 "text-align": "center",
                 "margin": "0px",
                 "--hover-color": "#eee",
-                "padding": "5px 2px"
+                "padding": "8px 6px",
+                "min-width": "45px",
+                "white-space": "nowrap"
             },
-            "nav-link-selected": {"background-color": "#8D6E63"},
+            "nav-link-selected": {"background-color": "#8D6E63", "color": "white"},
         }
     )
     
     # 로그아웃
-    if m == "나가기":
+    if m == "로그아웃":
         st.session_state["logged_in"] = False
         cookies["auto_login"] = "false"
         cookies.save()
@@ -1680,11 +1715,11 @@ def main():
         page_inform()
     elif m == "본점":
         page_board("본점", "🏠")
-    elif m == "작업장":
+    elif m == "작업":
         page_board("작업장", "🏭")
     elif m == "건의":
         page_board("건의사항", "💡")
-    elif m == "업무":
+    elif m == "체크":
         page_routine()
 
 if __name__ == "__main__":
