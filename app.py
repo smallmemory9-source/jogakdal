@@ -135,7 +135,40 @@ if processed_icon:
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
-html, body, [class*="css"] { font-family: 'Noto Sans KR', sans-serif; color: #4E342E; }
+
+/* 모든 텍스트 강제 검정색 */
+html, body, [class*="css"], p, span, div, label, h1, h2, h3, h4, h5, h6, 
+.stMarkdown, .stText, .stSelectbox, .stTextInput, .stTextArea,
+[data-testid="stMarkdownContainer"], [data-testid="stText"],
+.element-container, .stButton > button, input, textarea, select,
+.st-emotion-cache-1inwz65, .st-emotion-cache-16idsys,
+* { 
+    font-family: 'Noto Sans KR', sans-serif !important; 
+    color: #333333 !important; 
+}
+
+/* 대시보드 카드 내부 텍스트 */
+.dashboard-card, .dashboard-card *, 
+.dashboard-card h1, .dashboard-card h3,
+.dashboard-card-urgent *, .dashboard-card-warning *, .dashboard-card-success * {
+    color: #333333 !important;
+}
+
+/* 버튼은 흰색 유지 */
+.stButton > button, .stButton > button * {
+    color: white !important;
+}
+
+/* 선택된 메뉴 흰색 */
+.nav-link-selected, .nav-link-selected * {
+    color: white !important;
+}
+
+/* 배지 흰색 유지 */
+.urgent-badge, .normal-badge {
+    color: white !important;
+}
+
 .stApp { background-color: #FFF3E0; }
 
 header { background-color: transparent !important; }
@@ -177,6 +210,10 @@ header { background-color: transparent !important; }
     padding: 15px;
     margin-bottom: 10px;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    color: #333333 !important;
+}
+.dashboard-card h1, .dashboard-card h3, .dashboard-card small {
+    color: #333333 !important;
 }
 .dashboard-card-urgent {
     border-left: 4px solid #D32F2F;
@@ -840,9 +877,9 @@ def show_dashboard():
     with c1:
         card_class = "dashboard-card-urgent" if urgent_informs else "dashboard-card-warning" if unconfirmed_informs else "dashboard-card-success"
         st.markdown(f"""
-            <div class="dashboard-card {card_class}">
-                <h3>📢 미확인 인폼</h3>
-                <h1 style="margin:0;">{len(unconfirmed_informs)}</h1>
+            <div class="dashboard-card {card_class}" style="color:#333333 !important;">
+                <h3 style="color:#333333 !important;">📢 미확인 인폼</h3>
+                <h1 style="margin:0; color:#333333 !important;">{len(unconfirmed_informs)}</h1>
                 {'<span class="urgent-badge">긴급 ' + str(len(urgent_informs)) + '건</span>' if urgent_informs else ''}
             </div>
         """, unsafe_allow_html=True)
@@ -854,9 +891,9 @@ def show_dashboard():
     with c2:
         card_class = "dashboard-card-warning" if pending_tasks else "dashboard-card-success"
         st.markdown(f"""
-            <div class="dashboard-card {card_class}">
-                <h3>🔄 미완료 업무</h3>
-                <h1 style="margin:0;">{len(pending_tasks)}</h1>
+            <div class="dashboard-card {card_class}" style="color:#333333 !important;">
+                <h3 style="color:#333333 !important;">🔄 미완료 업무</h3>
+                <h1 style="margin:0; color:#333333 !important;">{len(pending_tasks)}</h1>
             </div>
         """, unsafe_allow_html=True)
         if pending_tasks:
@@ -868,10 +905,10 @@ def show_dashboard():
         total_notifications = new_comments + len(mentions)
         card_class = "dashboard-card-warning" if total_notifications else "dashboard-card-success"
         st.markdown(f"""
-            <div class="dashboard-card {card_class}">
-                <h3>💬 새 알림</h3>
-                <h1 style="margin:0;">{total_notifications}</h1>
-                <small>댓글 {new_comments} / 멘션 {len(mentions)}</small>
+            <div class="dashboard-card {card_class}" style="color:#333333 !important;">
+                <h3 style="color:#333333 !important;">💬 새 알림</h3>
+                <h1 style="margin:0; color:#333333 !important;">{total_notifications}</h1>
+                <small style="color:#333333 !important;">댓글 {new_comments} / 멘션 {len(mentions)}</small>
             </div>
         """, unsafe_allow_html=True)
         if total_notifications:
