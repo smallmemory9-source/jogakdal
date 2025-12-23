@@ -634,28 +634,51 @@ def login_page():
     if processed_logo:
         st.markdown(f"""
             <div class="logo-title-container">
-                <img src="data:image/png;base64,{image_to_base64(processed_logo)}" style="max-height: 80px;">
+                <img src="data:image/png;base64,{image_to_base64(processed_logo)}" style="max-height: 80px; width: auto;">
                 <h1>업무수첩</h1>
             </div>
         """, unsafe_allow_html=True)
     else:
         st.title("업무수첩")
 
-    tab1, tab2 = st.tabs(["로그인", "회원가입"])
+    tab1, tab2 = st.tabs(["로그인", "회원가입 요청"])
+    
+    # [탭 1] 로그인
     with tab1:
         with st.form("login"):
             uid = st.text_input("아이디")
             upw = st.text_input("비밀번호", type="password")
             auto = st.checkbox("자동 로그인")
+            
             if st.form_submit_button("입장", use_container_width=True):
+                # 1. 데이터 로드
                 res = DataManager.load("users", force_refresh=True)
+                
                 if res.success and not res.data.empty:
                     users = res.data
+                    
+                    # [자동 보정] 컬럼 이름의 앞뒤 공백 제거 (approved 뒤에 공백이 있어도 해결됨)
+                    users.columns = users.columns.str.strip()
+                    
+                    # 데이터 타입 변환
                     users["username"] = users["username"].astype(str)
+                    users["password"] = users["password"].astype(str)
+                    
                     hpw = hash_password(upw)
-                    u = users[(users["username"] == uid) & (users["password"].astype(str) == hpw)]
+                    u = users[(users["username"] == uid) & (users["password"] == hpw)]
+                    
                     if not u.empty:
-                        if check_approved(u.iloc[0].get("approved", "False")):
+                        # ---------------------------------------------------------
+                        # [진단 코드 시작] 문제 해결 후 이 부분은 지우셔도 됩니다.
+                        user_info = u.iloc[0].to_dict()
+                        approved_val = user_info.get("approved")
+                        st.error("🚨 [진단 모드] 시트에서 읽은 정보입니다. (확인용)")
+                        st.write(f"1. 컬럼 목록: {list(users.columns)}")
+                        st.write(f"2. 내 승인 값: '{approved_val}' (타입: {type(approved_val)})")
+                        # ---------------------------------------------------------
+
+                        # 승인 여부 체크
+                        if check_approved(approved_val):
                             st.session_state.update({
                                 "logged_in": True,
                                 "name": u.iloc[0]["name"],
@@ -668,36 +691,61 @@ def login_page():
                                 cookies["uid"] = uid
                                 cookies["upw"] = hpw
                                 cookies.save()
+                            st.success("로그인 성공! 잠시만 기다려주세요...")
+                            time.sleep(1) # 진단 메시지 확인용 딜레이
                             st.rerun()
-                        else: st.warning("승인 대기 중")
-                    else: st.error("정보 불일치")
-                else: st.error("연결 실패")
-    
+                        else:
+                            st.warning("⏳ 승인 대기 중입니다.")
+                            st.info("위의 [진단 모드]에서 '내 승인 값'이 TRUE나 1인지 확인해주세요.")
+                    else:
+                        st.error("아이디 또는 비밀번호가 일치하지 않습니다.")
+                else:
+                    st.error("서버 연결 실패. 잠시 후 다시 시도해주세요.")
+
+    # [탭 2] 회원가입
     with tab2:
         with st.form("signup"):
-            nid = st.text_input("아이디")
-            npw = st.text_input("비밀번호", type="password")
-            nname = st.text_input("이름")
-            ndept = st.selectbox("근무지", DEPARTMENTS)
+            new_id = st.text_input("희망 아이디")
+            new_pw = st.text_input("희망 비밀번호", type="password")
+            new_name = st.text_input("이름")
+            new_dept = st.selectbox("주 근무지", DEPARTMENTS)
+            
             if st.form_submit_button("신청", use_container_width=True):
-                if nid and npw and nname:
+                if new_id and new_pw and new_name:
                     res = DataManager.load("users", force_refresh=True)
                     if res.success:
                         users = res.data
-                        if not users.empty and nid in users["username"].values:
-                            st.error("이미 있는 아이디")
+                        # 여기서도 컬럼 공백 제거
+                        if not users.empty:
+                             users.columns = users.columns.str.strip()
+                             
+                        if not users.empty and new_id in users["username"].values:
+                            st.error("이미 사용 중인 아이디입니다.")
                         else:
-                            DataManager.save("users", pd.concat([users, pd.DataFrame([{
-                                "username": nid, "password": hash_password(npw),
-                                "name": nname, "role": "Staff", "approved": "False", "department": ndept
-                            }])], ignore_index=True) if not users.empty else pd.DataFrame([{
-                                "username": nid, "password": hash_password(npw),
-                                "name": nname, "role": "Staff", "approved": "False", "department": ndept
-                            }]), "회원가입")
-                            st.success("신청 완료")
-                    else: st.error("오류")
-                else: st.warning("모두 입력해주세요")
-
+                            new_row = {
+                                "username": new_id,
+                                "password": hash_password(new_pw),
+                                "name": new_name,
+                                "role": "Staff",
+                                "approved": "False",
+                                "department": new_dept
+                            }
+                            
+                            new_df = pd.DataFrame([new_row])
+                            if users.empty:
+                                final_df = new_df
+                            else:
+                                final_df = pd.concat([users, new_df], ignore_index=True)
+                            
+                            save_res = DataManager.save("users", final_df, "회원가입")
+                            if save_res.success:
+                                st.success("✅ 가입 신청이 완료되었습니다. 관리자 승인을 기다려주세요.")
+                            else:
+                                st.error(f"신청 실패: {save_res.error_msg}")
+                    else:
+                        st.error("서버 연결 오류")
+                else:
+                    st.warning("모든 항목을 입력해주세요.")
 def page_inform():
     st.subheader("📢 인폼노트")
     if "inform_date" not in st.session_state: st.session_state["inform_date"] = get_now().date()
@@ -956,3 +1004,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
