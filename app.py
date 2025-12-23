@@ -447,6 +447,9 @@ def load(key: str, force_refresh: bool = False) -> pd.DataFrame:
     result = DataManager.load(key, force_refresh)
     if not result.success and result.error_msg:
         st.session_state["last_error"] = result.error_msg
+    else:
+        # 성공 시 에러 상태 클리어
+        st.session_state["last_error"] = None
     return result.data
 
 def save(key: str, df: pd.DataFrame, operation: str = "") -> bool:
@@ -640,20 +643,14 @@ def search_content(query: str) -> Dict[str, List[dict]]:
 # [8. UI 컴포넌트]
 # ============================================================
 def show_network_status():
-    """네트워크/에러 상태 표시"""
-    last_error = st.session_state.get("last_error")
+    """네트워크/에러 상태 표시 - 실제 문제가 있을 때만"""
     pending_saves = st.session_state.get("pending_saves", [])
     
+    # 저장 대기 중인 항목이 있을 때만 표시
     if pending_saves:
         st.markdown(f"""
             <div class="network-status network-error">
-                ⚠️ 저장 대기 중: {len(pending_saves)}건
-            </div>
-        """, unsafe_allow_html=True)
-    elif last_error:
-        st.markdown(f"""
-            <div class="network-status network-offline">
-                ⚠️ 연결 불안정
+                ⚠️ 저장 대기: {len(pending_saves)}건
             </div>
         """, unsafe_allow_html=True)
 
