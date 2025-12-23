@@ -1320,7 +1320,7 @@ def main():
 
     show_pending_saves_retry()
 
-    menu = ["홈", "인폼", "본점", "작업", "건의", "체크", "로그아웃"]
+    menu = ["홈", "인폼", "본점", "작업장", "건의", "체크", "로그아웃"]
     icons = ["house-fill", "megaphone-fill", "shop", "tools", "chat-dots", "check2-square", "box-arrow-right"]
     if st.session_state['role'] == "Master":
         menu.insert(-1, "관리")
@@ -1375,3 +1375,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
