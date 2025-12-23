@@ -7,7 +7,6 @@ import base64
 import uuid
 import pytz
 from datetime import datetime, date, timedelta
-from concurrent.futures import ThreadPoolExecutor # [추가] 병렬 처리를 위한 도구
 from streamlit_option_menu import option_menu
 from streamlit_gsheets import GSheetsConnection
 from streamlit_cookies_manager import CookieManager
@@ -127,22 +126,19 @@ if processed_icon:
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
-@import url("https://fonts.googleapis.com/icon?family=Material+Icons");
 
-/* 기본 폰트 설정 (텍스트만) */
-html, body, [class*="css"] {
-    font-family: 'Noto Sans KR', sans-serif;
-    color: #333333;
+/* 폰트 적용 (텍스트 요소만) */
+h1, h2, h3, h4, h5, h6, p, label, textarea, input, button, .stMarkdown, .stText, .stTextInput, .stTextArea, .stSelectbox {
+    font-family: 'Noto Sans KR', sans-serif !important;
+    color: #333333 !important;
 }
 
-/* 아이콘 폰트 강제 적용 (깨짐 방지) */
-.material-icons, 
-[data-testid="stExpanderToggleIcon"] > svg,
-[data-testid="stExpanderToggleIcon"] {
-    font-family: 'Material Icons' !important;
+/* 아이콘 폰트 보호 */
+.material-icons, [data-testid="stExpanderToggleIcon"] {
+    font-family: inherit !important;
 }
 
-/* 버튼 스타일 */
+/* 버튼 */
 .stButton > button {
     background-color: #8D6E63 !important; 
     color: white !important; 
@@ -152,19 +148,16 @@ html, body, [class*="css"] {
     font-weight: bold; 
     width: 100%; 
 }
-
 .confirm-btn > button { background-color: #2E7D32 !important; }
 .retry-btn > button { background-color: #E65100 !important; }
 
-/* 배경색 */
+/* 배경 및 헤더 */
 .stApp { background-color: #FFF3E0; }
-
-/* 헤더 숨김 */
 header { visibility: hidden; }
 [data-testid="stDecoration"] { display: none; }
 [data-testid="stStatusWidget"] { display: none; }
 
-/* [모바일 최적화] 대시보드 요약 카드 */
+/* 요약 카드 (가로 스크롤) */
 .summary-container {
     display: flex;
     flex-direction: row;
@@ -173,7 +166,6 @@ header { visibility: hidden; }
     margin-bottom: 15px;
     overflow-x: auto;
 }
-
 .summary-card {
     flex: 1;
     background: white;
@@ -183,12 +175,11 @@ header { visibility: hidden; }
     box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     min-width: 90px;
 }
-
 .summary-title { font-size: 0.8rem; color: #666; margin-bottom: 5px; }
 .summary-value { font-size: 1.5rem; font-weight: bold; color: #333; }
 .summary-alert { color: #D32F2F !important; }
 
-/* 인폼 리스트 스타일 */
+/* 인폼 리스트 */
 .inform-item {
     background: white;
     border-left: 4px solid #8D6E63;
@@ -199,14 +190,10 @@ header { visibility: hidden; }
 }
 .inform-urgent { border-left-color: #D32F2F; background-color: #FFEBEE; }
 
-/* 로고 타이틀 */
+/* 로고 및 상태 */
 .logo-title-container { display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
 .logo-title-container h1 { margin: 0 0 0 10px; font-size: 1.5rem; color: #4E342E; }
-
-/* 네트워크 상태 */
 .network-status { position: fixed; top: 10px; right: 10px; padding: 5px 10px; border-radius: 20px; font-size: 0.75rem; z-index: 9999; background: #FFEBEE; color: #C62828; border: 1px solid #FFCDD2; }
-
-/* 탭 폰트 */
 button[data-baseweb="tab"] { font-size: 0.9rem !important; }
 </style>
 """, unsafe_allow_html=True)
@@ -227,11 +214,10 @@ def safe_get_cookie(key):
     except: return None
 
 # ============================================================
-# [5. 데이터 로드/저장 (속도 최적화)]
+# [5. 데이터 로드/저장 (게으른 로딩 적용)]
 # ============================================================
 class DataManager:
-    # [변경] 캐시 유지 시간을 10분(600초)으로 늘림. 
-    # 우리가 저장할 때마다 최신화하므로 길어도 안전함.
+    # [속도 개선] 캐시 유지 시간을 10분으로 증가 (자주 로딩 방지)
     CACHE_TTL = 600 
     
     @staticmethod
@@ -264,43 +250,50 @@ class DataManager:
     
     @staticmethod
     def load(key: str, force_refresh: bool = False) -> LoadResult:
+        """
+        [속도 개선] 
+        1. 캐시가 있으면 무조건 캐시 반환 (0초)
+        2. 없으면 구글 시트 로드
+        """
         if not force_refresh:
             cached = DataManager._get_from_cache(key)
             if cached is not None: return LoadResult(data=cached, success=True)
         
-        # [변경] 재시도 대기 시간을 줄임 (빠른 실패 후 재시도)
         for i in range(3):
             try:
+                # [참고] 데이터가 많아지면 여기서 느려짐 -> 차후 '보관함' 시트 분리 필요
                 df = conn.read(worksheet=SHEET_NAMES[key], ttl=0)
                 if df is not None:
                     if not df.empty:
                         df.columns = df.columns.str.strip()
+                    # 헤더 검증
                     if not df.empty and key == "users" and "username" not in df.columns:
                         raise ValueError("헤더 오류")
                     DataManager._set_cache(key, df)
                     return LoadResult(data=df, success=True)
             except Exception:
-                time.sleep(0.5) # 대기 시간 단축
+                time.sleep(0.5)
                 continue
             break
         
         cached = st.session_state.get("data_cache", {}).get(key)
         if cached is not None:
-            return LoadResult(data=cached, success=False, error_msg="캐시 사용")
+            return LoadResult(data=cached, success=False, error_msg="캐시 사용 (통신 실패)")
         return LoadResult(data=pd.DataFrame(), success=False, error_msg="로드 실패")
     
     @staticmethod
     def save(key: str, df: pd.DataFrame, operation_desc: str = "") -> SaveResult:
+        # 안전장치
         if key == "users":
             cached = st.session_state.get("data_cache", {}).get(key)
             if cached is not None and not cached.empty:
                 if len(df) < len(cached) * 0.5:
-                    return SaveResult(success=False, error_msg="데이터 보호: 대량 삭제 감지됨")
+                    return SaveResult(success=False, error_msg="데이터 보호: 대량 삭제 감지")
         
         for i in range(3):
             try:
                 conn.update(worksheet=SHEET_NAMES[key], data=df)
-                DataManager._set_cache(key, df)
+                DataManager._set_cache(key, df) # [중요] 저장 즉시 내 캐시 갱신 (리로드 방지)
                 return SaveResult(success=True)
             except Exception:
                 time.sleep(0.5)
@@ -315,6 +308,7 @@ class DataManager:
         st.session_state["pending_saves"] = pending[-10:]
         return SaveResult(success=False, error_msg="저장 실패")
 
+    # CRUD 메서드들 (생략 없이 유지)
     @staticmethod
     def append_row(key: str, new_row: dict, id_column: str = "id", operation_desc: str = "") -> SaveResult:
         for attempt in range(3):
@@ -323,6 +317,7 @@ class DataManager:
                 time.sleep(0.5)
                 continue
             current_df = result.data
+            
             if id_column and id_column not in new_row:
                 if current_df.empty: new_row[id_column] = 1
                 else:
@@ -330,6 +325,7 @@ class DataManager:
                         max_id = pd.to_numeric(current_df[id_column], errors='coerce').fillna(0).max()
                         new_row[id_column] = int(max_id) + 1
                     except: new_row[id_column] = len(current_df) + 1
+            
             new_df = pd.DataFrame([new_row])
             updated_df = pd.concat([current_df, new_df], ignore_index=True) if not current_df.empty else new_df
             save_result = DataManager.save(key, updated_df, operation_desc)
@@ -380,23 +376,6 @@ class DataManager:
             else: still_pending.append(item)
         st.session_state["pending_saves"] = still_pending
         return (success_count, len(still_pending))
-    
-    # [추가] 병렬 프리로딩 함수 (속도 개선의 핵심)
-    @staticmethod
-    def prefetch_all_data():
-        """모든 주요 데이터를 병렬로 미리 로드하여 캐시에 저장"""
-        target_sheets = ["users", "routine_def", "routine_log", "inform_notes", "inform_logs", "posts", "comments"]
-        
-        # 캐시가 모두 유효하면 패스
-        if all(DataManager._is_cache_valid(sheet) for sheet in target_sheets):
-            return
-
-        def load_one(key):
-            DataManager.load(key)
-
-        # 6개의 시트를 동시에 로드 (순차 로딩보다 5~6배 빠름)
-        with ThreadPoolExecutor() as executor:
-            executor.map(load_one, target_sheets)
 
 # ============================================================
 # [6. 유틸리티 함수]
@@ -427,9 +406,10 @@ def is_task_due(start_date_str, cycle_type, interval_val) -> bool:
     except: return False
 
 # ============================================================
-# [7. 비즈니스 로직]
+# [7. 비즈니스 로직 (Lazy Loading)]
 # ============================================================
 def get_pending_tasks_list() -> List[dict]:
+    # 필요한 것만 로드
     result_def = DataManager.load("routine_def")
     result_log = DataManager.load("routine_log")
     if not result_def.success: return []
@@ -447,6 +427,7 @@ def get_pending_tasks_list() -> List[dict]:
     return pending
 
 def get_unconfirmed_inform_list(username: str) -> List[dict]:
+    # 필요한 것만 로드
     res_informs = DataManager.load("inform_notes")
     res_logs = DataManager.load("inform_logs")
     if not res_informs.success or res_informs.data.empty: return []
@@ -464,6 +445,10 @@ def get_unconfirmed_inform_list(username: str) -> List[dict]:
     return unconfirmed
 
 def get_new_comments_count(username: str) -> int:
+    # 게시판 관련 데이터는 홈 화면에서 알림 숫자만 필요하지만, 
+    # 로직상 posts와 comments를 다 읽어야 함. 
+    # 단, 홈 화면 로딩 시에는 이것을 '비동기'나 '나중에' 할 수 없으므로 
+    # 최소한의 캐싱을 믿고 진행.
     res_posts = DataManager.load("posts")
     res_comments = DataManager.load("comments")
     if not res_posts.success or not res_comments.success: return 0
@@ -541,8 +526,8 @@ def show_notification_popup(tasks: List[dict], inform_notes: List[dict]):
 def show_dashboard():
     username = st.session_state['name']
     
-    # [변경] 스피너 제거 (이미 prefetch_all_data에서 로딩됨)
-    # 데이터는 캐시에서 바로 가져오므로 즉시 렌더링됨
+    # [속도 개선] 스피너 제거하고 바로 데이터 로드
+    # 캐시가 있으면 0초, 없으면 순차 로드 (prefetch 제거로 초기 부하 분산)
     pending_tasks = get_pending_tasks_list()
     unconfirmed_informs = get_unconfirmed_inform_list(username)
     new_comments = get_new_comments_count(username)
@@ -550,7 +535,6 @@ def show_dashboard():
     
     st.subheader("📊 오늘의 현황")
     
-    # 모바일 요약 카드
     urgent_cnt = len([i for i in unconfirmed_informs if i.get("priority") == "긴급"])
     inform_color = "summary-alert" if urgent_cnt > 0 else ""
     
@@ -908,10 +892,6 @@ def main():
     if not st.session_state.get("logged_in"):
         login_page()
         return
-
-    # [중요] 미리 데이터 로드 (병렬) - 여기서 로딩 시간을 다 씀
-    with st.spinner("데이터 동기화 중..."):
-        DataManager.prefetch_all_data()
 
     show_network_status()
     
